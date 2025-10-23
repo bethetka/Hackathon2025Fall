@@ -1,2 +1,1 @@
-# nothing here
-right now
+bethetka samiy krutoi v mire startup da da
