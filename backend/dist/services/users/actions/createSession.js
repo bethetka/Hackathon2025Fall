@@ -1,0 +1,46 @@
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+import { getSchema, ObjectId, Schema, SCHEMA_KEY, String } from "fastest-validator-decorators";
+import { UserSessions } from "../../../models/UserSession.js";
+import { jwtEncode } from "../../../utils/jwt.js";
+import { encodeSessionJwt } from "../utils/sessionJwt.js";
+let CreateSessionParams = class CreateSessionParams {
+    userId;
+    userAgent;
+};
+__decorate([
+    String(),
+    __metadata("design:type", String)
+], CreateSessionParams.prototype, "userId", void 0);
+__decorate([
+    String(),
+    __metadata("design:type", String)
+], CreateSessionParams.prototype, "userAgent", void 0);
+CreateSessionParams = __decorate([
+    Schema()
+], CreateSessionParams);
+export { CreateSessionParams };
+export default {
+    name: "createSession",
+    params: getSchema(CreateSessionParams),
+    async handler(ctx) {
+        const session = await UserSessions.create({
+            user: ctx.params.userId,
+            userAgent: ctx.params.userAgent,
+            lastUse: new Date()
+        });
+        let jwt = encodeSessionJwt(session);
+        return {
+            session,
+            jwt
+        };
+    }
+};
+//# sourceMappingURL=createSession.js.map
