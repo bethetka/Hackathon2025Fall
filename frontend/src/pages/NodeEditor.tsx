@@ -91,6 +91,16 @@ const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag }) => {
     );
 };
 
+function snapToGrid(x: number, y: number, gridSize = 1, gridSizeY = gridSize) {
+  const snap = (value: number, size: number) => 
+    size ? Math.round(value / Math.abs(size)) * Math.abs(size) : value;
+  
+  return {
+    x: snap(x, gridSize),
+    y: snap(y, gridSizeY)
+  };
+}
+
 const NodeEditor: React.FC = () => {
     const BOUND_SCALE = 3;
     const MIN_ZOOM = 0.5;
@@ -126,7 +136,7 @@ const NodeEditor: React.FC = () => {
                 id: 2,
                 type: "mongo",
                 x: (workspaceInfo.width * BOUND_SCALE) / 2 + 100,
-                y: (workspaceInfo.height * BOUND_SCALE) / 2 + 64,
+                y: (workspaceInfo.height * BOUND_SCALE) / 2 + 80,
             },
         ]);
     }, []);
@@ -134,6 +144,10 @@ const NodeEditor: React.FC = () => {
     const handleNodeDrag = (id: number, x: number, y: number) => {
         let newX = x;
         let newY = y;
+
+        let snapped = snapToGrid(newX, newY, 40);
+        newX = snapped.x;
+        newY = snapped.y;
 
         const draggedNode = nodes.find(node => node.id === id);
         if (!draggedNode) return;
@@ -160,7 +174,7 @@ const NodeEditor: React.FC = () => {
             if (isColliding) {
                 const overlapX = Math.min(draggedRight, otherRight) - Math.max(draggedLeft, otherLeft);
                 const overlapY = Math.min(draggedBottom, otherBottom) - Math.max(draggedTop, otherTop);
-        
+
                 if (overlapX < overlapY) {
                     if (draggedNode.x < otherNode.x) {
                         newX -= overlapX;
@@ -176,7 +190,7 @@ const NodeEditor: React.FC = () => {
                 }
             }
         }
-        
+
         setNodes((prevNodes) =>
             prevNodes.map((node) => (node.id === id ? { ...node, x: newX, y: newY } : node))
         );
@@ -284,7 +298,7 @@ const NodeEditor: React.FC = () => {
                 height: `${workspaceInfo.height}px`,
                 position: 'relative',
                 overflow: 'hidden',
-                background: "#f1f1f1",
+                
             }}
             ref={self}
         >
@@ -296,6 +310,9 @@ const NodeEditor: React.FC = () => {
                     transformOrigin: '0 0',
                     transform: `translate(${workspaceInfo.offsetX}px, ${workspaceInfo.offsetY}px) scale(${workspaceInfo.zoom})`,
                     cursor: isPanning ? 'grabbing' : 'grab',
+                    background: "#f1f1f1",
+                    backgroundImage: "radial-gradient(black 2px, transparent 0)",
+                    backgroundSize: "40px 40px",
                 }}
                 onMouseDown={handleMouseDown}
             >
