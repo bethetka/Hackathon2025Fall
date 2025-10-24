@@ -1,104 +1,18 @@
-import { nodes } from "@/lib/nodes";
-import { ChevronRight } from "lucide-react";
+import { Node, COLLISION_PADDING, NODE_HEIGHT, NODE_WIDTH, type INodeInfo, type IWorkspaceInfo } from "@/components/hackathon/node";
 import React, { useState, useEffect, useCallback, useRef } from "react";
-
-type NodeType = string;
-
-interface INodeInfo {
-    id: number;
-    x: number;
-    y: number;
-    type: NodeType;
-}
-
-interface IWorkspaceInfo {
-    width: number;
-    height: number;
-    offsetX: number;
-    offsetY: number;
-    zoom: number;
-}
-
-interface INodeProps {
-    info: INodeInfo;
-    workspaceInfo: IWorkspaceInfo;
-    onNodeDrag: (id: number, x: number, y: number) => void;
-}
-
-const NODE_WIDTH = 300;
-const NODE_HEIGHT = 150;
-const COLLISION_PADDING = 8;
-
-const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag }) => {
-    const [isDragging, setIsDragging] = useState(false);
-    const [initialMousePos, setInitialMousePos] = useState({ x: 0, y: 0 });
-    const [initialNodePos, setInitialNodePos] = useState({ x: 0, y: 0 });
-
-    const handleMouseDown = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setIsDragging(true);
-        setInitialMousePos({ x: e.clientX, y: e.clientY });
-        setInitialNodePos({ x: info.x, y: info.y });
-    };
-
-    const handleMouseMove = useCallback((e: MouseEvent) => {
-        if (isDragging) {
-            const deltaX = (e.clientX - initialMousePos.x) / workspaceInfo.zoom;
-            const deltaY = (e.clientY - initialMousePos.y) / workspaceInfo.zoom;
-            onNodeDrag(info.id, initialNodePos.x + deltaX, initialNodePos.y + deltaY);
-        }
-    }, [isDragging, initialMousePos, initialNodePos, info.id, onNodeDrag, workspaceInfo.zoom]);
-
-    const handleMouseUp = useCallback(() => {
-        setIsDragging(false);
-    }, []);
-
-    useEffect(() => {
-        if (isDragging) {
-            window.addEventListener("mousemove", handleMouseMove);
-            window.addEventListener("mouseup", handleMouseUp);
-        } else {
-            window.removeEventListener("mousemove", handleMouseMove);
-            window.removeEventListener("mouseup", handleMouseUp);
-        }
-
-        return () => {
-            window.removeEventListener("mousemove", handleMouseMove);
-            window.removeEventListener("mouseup", handleMouseUp);
-        };
-    }, [isDragging, handleMouseMove, handleMouseUp]);
-    const nodeType = nodes[info.type];
-    return (
-        <div
-            className={`absolute cursor-pointer pl-4 pr-4 pt-4 pb-4 select-none bg-white border-2 border-solid rounded-[12px] border-transparent font-medium hover:border-black`}
-            style={{
-                top: info.y,
-                left: info.x,
-                width: `${NODE_WIDTH}px`,
-                height: `${NODE_HEIGHT}px`,
-            }}
-            onMouseDown={handleMouseDown}
-        >
-            <div className="flex flex-row gap-2 items-center">
-                <img width={32} src={nodeType.icon} className="pointer-events-none" />
-                <p className="truncate">{nodeType.name}</p>
-            </div>
-
-            <div className="absolute top-1/2 right-4 -translate-y-1/2">
-                <ChevronRight />
-            </div>
-        </div>
-    );
-};
+import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "../ui/drawer";
+import { Button } from "../ui/button";
+import { nodeTypes } from "@/lib/nodes";
+import { NodeSettingsDrawer } from "./node-settings-drawer";
 
 function snapToGrid(x: number, y: number, gridSize = 1, gridSizeY = gridSize) {
-  const snap = (value: number, size: number) => 
-    size ? Math.round(value / Math.abs(size)) * Math.abs(size) : value;
-  
-  return {
-    x: snap(x, gridSize),
-    y: snap(y, gridSizeY)
-  };
+    const snap = (value: number, size: number) =>
+        size ? Math.round(value / Math.abs(size)) * Math.abs(size) : value;
+
+    return {
+        x: snap(x, gridSize),
+        y: snap(y, gridSizeY)
+    };
 }
 
 const NodeEditor: React.FC = () => {
@@ -123,6 +37,8 @@ const NodeEditor: React.FC = () => {
     const [initialMousePos, setInitialMousePos] = useState({ x: 0, y: 0 });
     const [initialOffset, setInitialOffset] = useState({ x: 0, y: 0 });
     const self = useRef<HTMLDivElement>(null);
+    const [nodeInfoDrawerOpen, setNodeInfoDrawerOpen] = useState(false);
+    const [selectedNode, setSelectedNode] = useState<INodeInfo | null>(null);
 
     useEffect(() => {
         setNodes([
@@ -278,6 +194,11 @@ const NodeEditor: React.FC = () => {
         }));
     }, [workspaceInfo]);
 
+    const handleNodeClicked = (id: number) => {
+        setSelectedNode(nodes.find(i => i.id == id) || null);
+        setNodeInfoDrawerOpen(true);
+    }
+
 
     useEffect(() => {
         const currentRef = self.current;
@@ -298,10 +219,11 @@ const NodeEditor: React.FC = () => {
                 height: `${workspaceInfo.height}px`,
                 position: 'relative',
                 overflow: 'hidden',
-                
+                borderRadius: `12px`
             }}
             ref={self}
         >
+            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode}/>
             <div
                 style={{
                     width: `${workspaceInfo.width * BOUND_SCALE}px`,
@@ -317,7 +239,7 @@ const NodeEditor: React.FC = () => {
                 onMouseDown={handleMouseDown}
             >
                 {nodes.map((i) => (
-                    <Node info={i} key={i.id} workspaceInfo={workspaceInfo} onNodeDrag={handleNodeDrag} />
+                    <Node info={i} key={i.id} workspaceInfo={workspaceInfo} onNodeDrag={handleNodeDrag} onNodeClicked={handleNodeClicked} />
                 ))}
             </div>
         </div>
