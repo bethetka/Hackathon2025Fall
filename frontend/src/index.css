@@ -3,7 +3,7 @@
 @import "tw-animate-css";
 
 body {
-	font-family: 'Inter', Arial, Helvetica, sans-serif !important;
+  font-family: 'Inter', Arial, Helvetica, sans-serif !important;
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -119,6 +119,7 @@ body {
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }

@@ -25,5 +25,5 @@ function generateDockerCompose(nodes: INodeInfo[]): IDockerCompose {
     //     }   
     // }
 
-    return {services}
+    return { services }
 }

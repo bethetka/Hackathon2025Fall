@@ -19,7 +19,7 @@ interface INodeSettingsDrawerProps {
 
 export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: INodeSettingsDrawerProps) => {
     if (!props.selectedNode) return <></>
-    
+
     const nodeType = nodeTypes[props.selectedNode.type];
     const [validationSchema, setValidationSchema] = useState<z.ZodTypeAny | null>(null);
     const [fields, setFields] = useState<Record<string, any>>({});
@@ -32,23 +32,23 @@ export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: IN
             setValidationError(null);
         }
     }, [props.selectedNode, nodeType]);
-    
+
     const params = validationSchema ? z.toJSONSchema(validationSchema) : { properties: {} };
-    
+
     const validate = () => {
         if (!validationSchema) return { success: true, error: null };
-        
+
         try {
             validationSchema.parse(fields);
             return { success: true, error: null };
         } catch (error) {
-            return { 
-                success: false, 
-                error: error instanceof z.ZodError ? error : null 
+            return {
+                success: false,
+                error: error instanceof z.ZodError ? error : null
             };
         }
     };
-    
+
     const handleSave = () => {
         const { success, error } = validate();
         if (success) {
@@ -60,7 +60,7 @@ export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: IN
             setValidationError(error);
         }
     };
-    
+
     const handleCancel = () => {
         if (props.selectedNode) {
             setFields(props.selectedNode.fields);
@@ -110,25 +110,25 @@ export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: IN
                 {Object.entries(params.properties || {}).map(([propName, schema]) => {
                     const error = validationError?.issues.find(e => e.path[0] === propName);
                     return (
-                        <ZodFieldEditor 
-                            key={propName} 
-                            propName={propName} 
-                            schema={schema as JSONSchema.JSONSchema} 
+                        <ZodFieldEditor
+                            key={propName}
+                            propName={propName}
+                            schema={schema as JSONSchema.JSONSchema}
                             setValue={(v) => {
-                                setFields(prev => ({...prev, [propName]: v}));
+                                setFields(prev => ({ ...prev, [propName]: v }));
                                 if (validationError) {
                                     const newErrors = validationError.issues.filter(
                                         e => e.path[0] !== propName
                                     );
-                                    setValidationError(newErrors.length > 0 ? 
+                                    setValidationError(newErrors.length > 0 ?
                                         new z.ZodError(newErrors) : null);
                                 }
-                            }} 
+                            }}
                             value={fields[propName]}
                             error={error}
                         />
                     );
-                })}   
+                })}
             </div>
             {validationError && (
                 <div className="px-4 mb-4 text-red-500 text-sm">

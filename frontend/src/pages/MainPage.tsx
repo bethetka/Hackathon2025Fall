@@ -9,13 +9,11 @@ import { cn } from "@/lib/utils";
 
 export const MainPage: React.FC = () => {
     const nodeEditorRef = useRef<NodeEditorHandle>(null);
-    
-    // Serialize dialog state
+
     const [isSerializeDialogOpen, setIsSerializeDialogOpen] = useState(false);
     const [serializeContent, setSerializeContent] = useState("");
     const [copySuccess, setCopySuccess] = useState(false);
-    
-    // Deserialize dialog state
+
     const [isDeserializeDialogOpen, setIsDeserializeDialogOpen] = useState(false);
     const [deserializeContent, setDeserializeContent] = useState("");
     const [deserializeError, setDeserializeError] = useState<string | null>(null);
@@ -69,8 +67,7 @@ export const MainPage: React.FC = () => {
                 <Button onClick={handleDeserialize}>Deserialize</Button>
             </div>
             <NodeEditor ref={nodeEditorRef} />
-            
-            {/* Serialize Dialog */}
+
             <Dialog open={isSerializeDialogOpen} onOpenChange={setIsSerializeDialogOpen}>
                 <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
                     <DialogHeader>
@@ -79,7 +76,7 @@ export const MainPage: React.FC = () => {
                             Copy your node configuration as JSON. This can be used to save or share your workflow.
                         </DialogDescription>
                     </DialogHeader>
-                    
+
                     {serializeError && (
                         <Alert variant="destructive">
                             <X className="h-4 w-4" />
@@ -87,14 +84,14 @@ export const MainPage: React.FC = () => {
                             <AlertDescription>{serializeError}</AlertDescription>
                         </Alert>
                     )}
-                    
+
                     <div className="flex-1 overflow-hidden flex flex-col">
                         <div className="flex justify-between items-center mb-2">
                             <div className="text-sm text-muted-foreground">
                                 {serializeContent.split('\n').length} lines
                             </div>
-                            <Button 
-                                variant="outline" 
+                            <Button
+                                variant="outline"
                                 size="sm"
                                 onClick={handleCopyToClipboard}
                                 className="gap-2"
@@ -112,21 +109,20 @@ export const MainPage: React.FC = () => {
                                 )}
                             </Button>
                         </div>
-                        
+
                         <div className="flex-1 overflow-auto rounded-md border bg-muted/30 p-4 font-mono text-sm">
                             <pre className="whitespace-pre-wrap break-all">
                                 {serializeContent}
                             </pre>
                         </div>
-                        
+
                         <div className="mt-4 text-sm text-muted-foreground">
                             <p>Pro Tip: Use this JSON to save your workflow or share it with others.</p>
                         </div>
                     </div>
                 </DialogContent>
             </Dialog>
-            
-            {/* Deserialize Dialog */}
+
             <Dialog open={isDeserializeDialogOpen} onOpenChange={setIsDeserializeDialogOpen}>
                 <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
                     <DialogHeader>
@@ -135,7 +131,7 @@ export const MainPage: React.FC = () => {
                             Paste your node configuration JSON to load a saved workflow.
                         </DialogDescription>
                     </DialogHeader>
-                    
+
                     <div className="flex-1 flex flex-col overflow-hidden">
                         <div className="relative flex-1">
                             <Textarea
@@ -156,21 +152,21 @@ export const MainPage: React.FC = () => {
                                 </Alert>
                             )}
                         </div>
-                        
+
                         <div className="mt-4 flex justify-end space-x-2">
-                            <Button 
-                                variant="outline" 
+                            <Button
+                                variant="outline"
                                 onClick={() => setIsDeserializeDialogOpen(false)}
                             >
                                 Cancel
                             </Button>
-                            <Button 
+                            <Button
                                 onClick={handleApplyDeserialize}
                             >
                                 Apply
                             </Button>
                         </div>
-                    
+
                     </div>
                 </DialogContent>
             </Dialog>

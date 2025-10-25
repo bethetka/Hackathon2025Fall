@@ -46,7 +46,7 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
     const [selectedNode, setSelectedNode] = useState<INodeInfo | null>(null);
     const [nodeSelectorOpen, setNodeSelectorOpen] = useState(false);
     const [nodeValidationErrors, setNodeValidationErrors] = useState<Record<number, z.ZodError>>({});
-    
+
     const [selectedNodeIds, setSelectedNodeIds] = useState<Set<number>>(new Set());
     const [isMarqueeSelecting, setIsMarqueeSelecting] = useState(false);
     const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -117,13 +117,13 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
         }
 
         setNodes((prevNodes) =>
-            prevNodes.map((node) => 
-                nodesToMove.has(node.id) 
-                    ? { 
-                        ...node, 
+            prevNodes.map((node) =>
+                nodesToMove.has(node.id)
+                    ? {
+                        ...node,
                         x: node.x + adjustedDeltaX,
-                        y: node.y + adjustedDeltaY 
-                    } 
+                        y: node.y + adjustedDeltaY
+                    }
                     : node
             )
         );
@@ -142,11 +142,11 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
             setIsMarqueeSelecting(true);
             const worldPos = screenToWorld(e.clientX, e.clientY);
             setMarqueeStart(worldPos);
-            setMarqueeRect({ 
-                x: worldPos.x, 
-                y: worldPos.y, 
-                width: 0, 
-                height: 0 
+            setMarqueeRect({
+                x: worldPos.x,
+                y: worldPos.y,
+                width: 0,
+                height: 0
             });
             setSelectedNodeIds(new Set());
         } else {
@@ -176,8 +176,8 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
                 offsetY: Math.max(minOffsetY, Math.min(maxOffsetY, newOffsetY)),
             }));
         } else if (isMarqueeSelecting && marqueeStart && self.current) {
-                const currentWorldPos = screenToWorld(e.clientX, e.clientY);
-            
+            const currentWorldPos = screenToWorld(e.clientX, e.clientY);
+
             const newMarqueeRect = {
                 x: Math.min(marqueeStart.x, currentWorldPos.x),
                 y: Math.min(marqueeStart.y, currentWorldPos.y),
@@ -192,17 +192,17 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
                 const nodeRight = node.x + NODE_WIDTH;
                 const nodeTop = node.y;
                 const nodeBottom = node.y + NODE_HEIGHT;
-                
+
                 const marqueeLeft = newMarqueeRect.x;
                 const marqueeRight = newMarqueeRect.x + newMarqueeRect.width;
                 const marqueeTop = newMarqueeRect.y;
                 const marqueeBottom = newMarqueeRect.y + newMarqueeRect.height;
-                
-                const intersects = !(nodeRight < marqueeLeft || 
-                                   nodeLeft > marqueeRight || 
-                                   nodeBottom < marqueeTop || 
-                                   nodeTop > marqueeBottom);
-                
+
+                const intersects = !(nodeRight < marqueeLeft ||
+                    nodeLeft > marqueeRight ||
+                    nodeBottom < marqueeTop ||
+                    nodeTop > marqueeBottom);
+
                 if (intersects) {
                     newNodesWithinMarquee.add(node.id);
                 }
@@ -218,28 +218,28 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
             if (marqueeRect && self.current) {
                 if (Math.abs(marqueeRect.width) > 2 || Math.abs(marqueeRect.height) > 2) {
                     const selectedIds = new Set<number>();
-                    
+
                     nodes.forEach(node => {
                         const nodeLeft = node.x;
                         const nodeRight = node.x + NODE_WIDTH;
                         const nodeTop = node.y;
                         const nodeBottom = node.y + NODE_HEIGHT;
-                        
+
                         const marqueeLeft = marqueeRect.x;
                         const marqueeRight = marqueeRect.x + marqueeRect.width;
                         const marqueeTop = marqueeRect.y;
                         const marqueeBottom = marqueeRect.y + marqueeRect.height;
-                        
-                        const intersects = !(nodeRight < marqueeLeft || 
-                                          nodeLeft > marqueeRight || 
-                                          nodeBottom < marqueeTop || 
-                                          nodeTop > marqueeBottom);
-                        
+
+                        const intersects = !(nodeRight < marqueeLeft ||
+                            nodeLeft > marqueeRight ||
+                            nodeBottom < marqueeTop ||
+                            nodeTop > marqueeBottom);
+
                         if (intersects) {
                             selectedIds.add(node.id);
                         }
                     });
-                    
+
                     if ((window.event as MouseEvent)?.ctrlKey || (window.event as MouseEvent)?.metaKey) {
                         const newSelection = new Set([...selectedNodeIds, ...selectedIds]);
                         setSelectedNodeIds(newSelection);
@@ -248,7 +248,7 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
                     }
                 }
             }
-            
+
             setIsMarqueeSelecting(false);
             setMarqueeRect(null);
             setMarqueeStart(null);
@@ -310,7 +310,7 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
         if (e && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
             e.stopPropagation();
-            
+
             setSelectedNodeIds(prev => {
                 const newSelection = new Set(prev);
                 if (newSelection.has(id)) {
@@ -430,7 +430,7 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
 
     return (
         <>
-            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields} deleteNode={handleDeleteNode}/>
+            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields} deleteNode={handleDeleteNode} />
             <NodeSelector open={nodeSelectorOpen} setOpen={setNodeSelectorOpen} onSelected={handleNewNode} />
             <div
                 style={{
@@ -458,12 +458,12 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
                     onClick={handleCanvasClick}
                 >
                     {nodes.map((i) => (
-                        <Node 
-                            interactable={true} 
-                            info={i} 
-                            key={i.id} 
-                            workspaceInfo={workspaceInfo} 
-                            onNodeDrag={handleNodeDrag} 
+                        <Node
+                            interactable={true}
+                            info={i}
+                            key={i.id}
+                            workspaceInfo={workspaceInfo}
+                            onNodeDrag={handleNodeDrag}
                             onNodeClicked={handleNodeClicked}
                             hasError={nodeValidationErrors[i.id] !== undefined}
                             isSelected={selectedNodeIds.has(i.id)}

@@ -88,15 +88,14 @@ export const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag, on
 
     return (
         <div
-            className={`absolute cursor-pointer pl-4 pr-4 pt-4 pb-4 select-none bg-white border-2 border-solid rounded-[12px] font-medium ${
-                hasError 
-                    ? "border-red-500" 
-                    : isSelected 
-                        ? "border-blue-500 bg-blue-50" 
+            className={`absolute cursor-pointer pl-4 pr-4 pt-4 pb-4 select-none bg-white border-2 border-solid rounded-[12px] font-medium ${hasError
+                    ? "border-red-500"
+                    : isSelected
+                        ? "border-blue-500 bg-blue-50"
                         : isWithinMarquee
                             ? "border-blue-500"
                             : `border-transparent ${!isMarqueeSelecting ? "hover:border-black" : ""}`
-            }`}
+                }`}
             style={{
                 top: info.y,
                 left: info.x,
