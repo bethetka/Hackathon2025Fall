@@ -25,9 +25,11 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
     const MIN_ZOOM = 0.5;
     const MAX_ZOOM = 4;
 
+    const DEFAULT_WORKSPACE = { width: 1366, height: 768 };
+    const MIN_WORKSPACE_SIZE = 320;
+
     const [workspaceInfo, setWorkspaceInfo] = useState<IWorkspaceInfo>(() => {
-        const width = 1366;
-        const height = 768;
+        const { width, height } = DEFAULT_WORKSPACE;
         return {
             width,
             height,
@@ -506,25 +508,73 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
         });
     }
 
+    useEffect(() => {
+        if (!self.current) return;
+        const element = self.current;
+        const observer = new ResizeObserver(([entry]) => {
+            if (!entry) return;
+            const measuredWidth = Math.max(entry.contentRect.width, MIN_WORKSPACE_SIZE);
+            const measuredHeight = Math.max(entry.contentRect.height, MIN_WORKSPACE_SIZE);
+
+            setWorkspaceInfo(prev => {
+                const worldWidth = measuredWidth * BOUND_SCALE;
+                const worldHeight = measuredHeight * BOUND_SCALE;
+                const minOffsetX = measuredWidth - worldWidth * prev.zoom;
+                const minOffsetY = measuredHeight - worldHeight * prev.zoom;
+                const maxOffsetX = 0;
+                const maxOffsetY = 0;
+                const offsetXRatio = prev.width !== 0 ? prev.offsetX / prev.width : -((BOUND_SCALE - 1) / 2);
+                const offsetYRatio = prev.height !== 0 ? prev.offsetY / prev.height : -((BOUND_SCALE - 1) / 2);
+                const nextOffsetX = Math.max(minOffsetX, Math.min(maxOffsetX, offsetXRatio * measuredWidth));
+                const nextOffsetY = Math.max(minOffsetY, Math.min(maxOffsetY, offsetYRatio * measuredHeight));
+
+                const widthDelta = Math.abs(prev.width - measuredWidth);
+                const heightDelta = Math.abs(prev.height - measuredHeight);
+                const offsetXDelta = Math.abs(prev.offsetX - nextOffsetX);
+                const offsetYDelta = Math.abs(prev.offsetY - nextOffsetY);
+
+                if (widthDelta < 1 && heightDelta < 1) {
+                    if (offsetXDelta < 0.5 && offsetYDelta < 0.5) {
+                        return prev;
+                    }
+
+                    return {
+                        ...prev,
+                        offsetX: nextOffsetX,
+                        offsetY: nextOffsetY,
+                    };
+                }
+
+                return {
+                    ...prev,
+                    width: measuredWidth,
+                    height: measuredHeight,
+                    offsetX: nextOffsetX,
+                    offsetY: nextOffsetY,
+                };
+            });
+        });
+
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, []);
+
     return (
         <>
             <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields} deleteNode={handleDeleteNode} existingNetworks={existingNetworks}/>
             <NodeSelector open={nodeSelectorOpen} setOpen={setNodeSelectorOpen} onSelected={handleNewNode} />
             <div
-                style={{
-                    width: `${workspaceInfo.width}px`,
-                    height: `${workspaceInfo.height}px`,
-                    position: 'relative',
-                    overflow: 'hidden',
-                    borderRadius: `12px`
-                }}
                 ref={self}
+                className="relative h-full min-h-[480px] w-full overflow-hidden rounded-xl"
+                style={{ maxHeight: "100%" }}
             >
                 <div
                     style={{
                         width: `${workspaceInfo.width * BOUND_SCALE}px`,
                         height: `${workspaceInfo.height * BOUND_SCALE}px`,
-                        position: 'relative',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
                         transformOrigin: '0 0',
                         transform: `translate(${workspaceInfo.offsetX}px, ${workspaceInfo.offsetY}px) scale(${workspaceInfo.zoom})`,
                         cursor: isPanning ? 'grabbing' : 'grab',

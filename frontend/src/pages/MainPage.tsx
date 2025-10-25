@@ -1,15 +1,16 @@
 import NodeEditor, { type NodeEditorHandle } from "@/components/hackathon/node-editor";
-import React, { useRef, useState } from "react";
+import React, { type ChangeEvent, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Copy, Check, X } from "lucide-react";
+import { Check, Container, Copy, Download, FileJson, Keyboard, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildDockerComposeYaml } from "@/lib/generator";
 
 export const MainPage: React.FC = () => {
     const nodeEditorRef = useRef<NodeEditorHandle>(null);
+    const importFileInputRef = useRef<HTMLInputElement>(null);
 
     const [isSerializeDialogOpen, setIsSerializeDialogOpen] = useState(false);
     const [serializeContent, setSerializeContent] = useState("");
@@ -24,6 +25,14 @@ export const MainPage: React.FC = () => {
     const [dockerCopySuccess, setDockerCopySuccess] = useState(false);
     const [dockerError, setDockerError] = useState<string | null>(null);
 
+    const applyNodesFromJson = (content: string) => {
+        const data = JSON.parse(content);
+        if (!Array.isArray(data)) {
+            throw new Error("Expected an array of nodes");
+        }
+        nodeEditorRef.current?.deserialize(data);
+    };
+
     const handleSerialize = () => {
         try {
             const nodes = nodeEditorRef.current?.serialize();
@@ -35,6 +44,50 @@ export const MainPage: React.FC = () => {
             }
         } catch (e) {
             setSerializeError(e instanceof Error ? e.message : String(e));
+        }
+    };
+
+    const handleExportJson = () => {
+        try {
+            const nodes = nodeEditorRef.current?.serialize();
+            if (!nodes) return;
+            const json = JSON.stringify(nodes, null, 2);
+            const blob = new Blob([json], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = `stackpilot-workflow-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(url);
+            setSerializeError(null);
+        } catch (e) {
+            setSerializeError(e instanceof Error ? e.message : String(e));
+            setSerializeContent("");
+            setIsSerializeDialogOpen(true);
+        }
+    };
+
+    const handleImportButtonClick = () => {
+        importFileInputRef.current?.click();
+    };
+
+    const handleImportFromFile = async (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            setDeserializeContent(text);
+            applyNodesFromJson(text);
+            setDeserializeError(null);
+            setIsDeserializeDialogOpen(false);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            setDeserializeError(message);
+            setIsDeserializeDialogOpen(true);
+        } finally {
+            event.target.value = "";
         }
     };
 
@@ -78,11 +131,7 @@ export const MainPage: React.FC = () => {
 
     const handleApplyDeserialize = () => {
         try {
-            const data = JSON.parse(deserializeContent);
-            if (!Array.isArray(data)) {
-                throw new Error("Expected an array of nodes");
-            }
-            nodeEditorRef.current?.deserialize(data);
+            applyNodesFromJson(deserializeContent);
             setIsDeserializeDialogOpen(false);
         } catch (e) {
             setDeserializeError(e instanceof Error ? e.message : String(e));
@@ -90,14 +139,75 @@ export const MainPage: React.FC = () => {
     };
 
     return (
-        <div className="w-full flex flex-col items-center justify-center p-4 pt-12">
-            <h1 className="text-[36px] mb-4">Aéza interactive something</h1>
-            <div className="mb-4 space-x-2">
-                <Button onClick={handleSerialize}>Serialize</Button>
-                <Button onClick={handleDeserialize}>Deserialize</Button>
-                <Button onClick={handleDockerCompose}>Docker Compose</Button>
-            </div>
-            <NodeEditor ref={nodeEditorRef} />
+        <div className="min-h-screen bg-background flex flex-col">
+            <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10">
+                <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-2">
+                        <h1 className="text-3xl font-semibold tracking-tight">StackPilot Canvas</h1>
+                        <p className="text-sm text-muted-foreground">
+                            Sketch the architecture, focus on the editor, and keep sharing effortless.
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-3 rounded-lg border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                        <Keyboard className="h-5 w-5 text-foreground" />
+                        <div className="space-y-1">
+                            <div className="font-medium text-foreground">Hotkeys</div>
+                            <div className="flex flex-wrap items-center gap-1">
+                                <kbd className="rounded border bg-background px-2 py-1 text-[10px] font-medium uppercase tracking-wide">Shift</kbd>
+                                <span className="text-[10px] font-semibold text-muted-foreground">+</span>
+                                <kbd className="rounded border bg-background px-2 py-1 text-[10px] font-medium uppercase tracking-wide">A</kbd>
+                                <span className="text-xs text-muted-foreground">Add new node</span>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                <div className="flex flex-col gap-3 rounded-xl border bg-muted/20 p-4 shadow-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button onClick={handleExportJson} className="gap-2">
+                            <Download className="h-4 w-4" />
+                            Export JSON
+                        </Button>
+                        <Button variant="outline" onClick={handleImportButtonClick} className="gap-2">
+                            <Upload className="h-4 w-4" />
+                            Import JSON
+                        </Button>
+                        <Button variant="outline" onClick={handleSerialize} className="gap-2">
+                            <FileJson className="h-4 w-4" />
+                            View JSON
+                        </Button>
+                        <Button variant="outline" onClick={handleDockerCompose} className="gap-2">
+                            <Container className="h-4 w-4" />
+                            View Docker Compose
+                        </Button>
+                        <input
+                            ref={importFileInputRef}
+                            type="file"
+                            accept="application/json"
+                            className="hidden"
+                            onChange={handleImportFromFile}
+                        />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                        <span>Importing from a file applies immediately.</span>
+                        <span>Use View JSON to copy or audit the current layout,</span>
+                        <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto px-0 text-xs"
+                            onClick={handleDeserialize}
+                        >
+                            or paste JSON manually.
+                        </Button>
+                    </div>
+                </div>
+
+                <section className="flex min-h-[480px] flex-1 flex-col overflow-hidden rounded-xl border bg-muted/20">
+                    <div className="flex-1 overflow-hidden p-4">
+                        <NodeEditor ref={nodeEditorRef} />
+                    </div>
+                </section>
+            </main>
 
             <Dialog open={isSerializeDialogOpen} onOpenChange={setIsSerializeDialogOpen}>
                 <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
