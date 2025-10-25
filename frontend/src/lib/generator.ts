@@ -15,15 +15,15 @@ interface IDockerCompose {
 function generateDockerCompose(nodes: INodeInfo[]): IDockerCompose {
     let services: IDockerComposeService[] = [];
 
-    for (const node of nodes) {
-        let nodeType = nodeTypes[node.type]!;
-        switch (node.type) {
-            case "docker":
-                node.fields as z
-            default:
-                console.warn(node.type, "unsupported")
-        }   
-    }
+    // for (const node of nodes) {
+    //     let nodeType = nodeTypes[node.type]!;
+    //     switch (node.type) {
+    //         case "docker":
+    //             break;
+    //         default:
+    //             console.warn(node.type, "unsupported")
+    //     }   
+    // }
 
     return {services}
 }
