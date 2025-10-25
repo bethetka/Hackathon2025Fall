@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Copy, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { buildDockerComposeYaml } from "@/lib/generator";
 
 export const MainPage: React.FC = () => {
     const nodeEditorRef = useRef<NodeEditorHandle>(null);
@@ -20,6 +21,10 @@ export const MainPage: React.FC = () => {
     const [deserializeContent, setDeserializeContent] = useState("");
     const [deserializeError, setDeserializeError] = useState<string | null>(null);
     const [serializeError, setSerializeError] = useState<string | null>(null);
+    const [isDockerDialogOpen, setIsDockerDialogOpen] = useState(false);
+    const [dockerContent, setDockerContent] = useState("");
+    const [dockerCopySuccess, setDockerCopySuccess] = useState(false);
+    const [dockerError, setDockerError] = useState<string | null>(null);
 
     const handleSerialize = () => {
         try {
@@ -39,6 +44,31 @@ export const MainPage: React.FC = () => {
         navigator.clipboard.writeText(serializeContent).then(() => {
             setCopySuccess(true);
             setTimeout(() => setCopySuccess(false), 2000);
+        });
+    };
+
+    const handleDockerCompose = () => {
+        try {
+            const nodes = nodeEditorRef.current?.serialize();
+            if (!nodes) return;
+            const yaml = buildDockerComposeYaml(nodes);
+            setDockerContent(yaml);
+            setDockerCopySuccess(false);
+            setDockerError(null);
+            setIsDockerDialogOpen(true);
+        } catch (e) {
+            setDockerContent("");
+            const message = e instanceof Error ? e.message : String(e);
+            setDockerError(message);
+            setDockerCopySuccess(false);
+            setIsDockerDialogOpen(true);
+        }
+    };
+
+    const handleDockerCopy = () => {
+        navigator.clipboard.writeText(dockerContent).then(() => {
+            setDockerCopySuccess(true);
+            setTimeout(() => setDockerCopySuccess(false), 2000);
         });
     };
 
@@ -67,6 +97,7 @@ export const MainPage: React.FC = () => {
             <div className="mb-4 space-x-2">
                 <Button onClick={handleSerialize}>Serialize</Button>
                 <Button onClick={handleDeserialize}>Deserialize</Button>
+                <Button onClick={handleDockerCompose}>Docker Compose</Button>
             </div>
             <NodeEditor ref={nodeEditorRef} />
             
@@ -172,6 +203,60 @@ export const MainPage: React.FC = () => {
                         </div>
                     
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={isDockerDialogOpen} onOpenChange={setIsDockerDialogOpen}>
+                <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle>Docker Compose</DialogTitle>
+                        <DialogDescription>
+                            Generated docker-compose.yml from your current nodes.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {dockerError && (
+                        <Alert variant="destructive">
+                            <X className="h-4 w-4" />
+                            <AlertTitle>Error</AlertTitle>
+                            <AlertDescription>{dockerError}</AlertDescription>
+                        </Alert>
+                    )}
+
+                    {!dockerError && (
+                        <div className="flex-1 overflow-hidden flex flex-col">
+                            <div className="flex justify-between items-center mb-2">
+                                <div className="text-sm text-muted-foreground">
+                                    {dockerContent.split("\n").length} lines
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleDockerCopy}
+                                    className="gap-2"
+                                    disabled={!dockerContent}
+                                >
+                                    {dockerCopySuccess ? (
+                                        <>
+                                            <Check className="h-3 w-3" />
+                                            Copied!
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Copy className="h-3 w-3" />
+                                            Copy YAML
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+
+                            <div className="flex-1 overflow-auto rounded-md border bg-muted/30 p-4 font-mono text-sm">
+                                <pre className="whitespace-pre-wrap break-all">
+                                    {dockerContent}
+                                </pre>
+                            </div>
+                        </div>
+                    )}
                 </DialogContent>
             </Dialog>
         </div>
