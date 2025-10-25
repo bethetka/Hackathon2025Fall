@@ -64,47 +64,68 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
         const draggedNode = nodes.find(node => node.id === id);
         if (!draggedNode) return;
 
-        for (const otherNode of nodes) {
-            if (otherNode.id === id) continue;
+        const deltaX = newX - draggedNode.x;
+        const deltaY = newY - draggedNode.y;
 
-            const draggedLeft = newX - COLLISION_PADDING;
-            const draggedRight = newX + NODE_WIDTH + COLLISION_PADDING;
-            const draggedTop = newY - COLLISION_PADDING;
-            const draggedBottom = newY + NODE_HEIGHT + COLLISION_PADDING;
+        const nodesToMove = new Set([id, ...(selectedNodeIds.has(id) ? selectedNodeIds : [])]);
+        const movingNodes = nodes.filter(node => nodesToMove.has(node.id));
+        const staticNodes = nodes.filter(node => !nodesToMove.has(node.id));
 
-            const otherLeft = otherNode.x;
-            const otherRight = otherNode.x + NODE_WIDTH;
-            const otherTop = otherNode.y;
-            const otherBottom = otherNode.y + NODE_HEIGHT;
+        let adjustedDeltaX = deltaX;
+        let adjustedDeltaY = deltaY;
 
-            const isColliding =
-                draggedRight > otherLeft &&
-                draggedLeft < otherRight &&
-                draggedBottom > otherTop &&
-                draggedTop < otherBottom;
+        for (const movingNode of movingNodes) {
+            const newNodeX = movingNode.x + deltaX;
+            const newNodeY = movingNode.y + deltaY;
 
-            if (isColliding) {
-                const overlapX = Math.min(draggedRight, otherRight) - Math.max(draggedLeft, otherLeft);
-                const overlapY = Math.min(draggedBottom, otherBottom) - Math.max(draggedTop, otherTop);
+            for (const staticNode of staticNodes) {
+                const movingLeft = newNodeX - COLLISION_PADDING;
+                const movingRight = newNodeX + NODE_WIDTH + COLLISION_PADDING;
+                const movingTop = newNodeY - COLLISION_PADDING;
+                const movingBottom = newNodeY + NODE_HEIGHT + COLLISION_PADDING;
 
-                if (overlapX < overlapY) {
-                    if (draggedNode.x < otherNode.x) {
-                        newX -= overlapX;
+                const staticLeft = staticNode.x;
+                const staticRight = staticNode.x + NODE_WIDTH;
+                const staticTop = staticNode.y;
+                const staticBottom = staticNode.y + NODE_HEIGHT;
+
+                const isColliding =
+                    movingRight > staticLeft &&
+                    movingLeft < staticRight &&
+                    movingBottom > staticTop &&
+                    movingTop < staticBottom;
+
+                if (isColliding) {
+                    const overlapX = Math.min(movingRight, staticRight) - Math.max(movingLeft, staticLeft);
+                    const overlapY = Math.min(movingBottom, staticBottom) - Math.max(movingTop, staticTop);
+
+                    if (overlapX < overlapY) {
+                        if (movingNode.x < staticNode.x) {
+                            adjustedDeltaX = Math.min(adjustedDeltaX, deltaX - overlapX);
+                        } else {
+                            adjustedDeltaX = Math.max(adjustedDeltaX, deltaX + overlapX);
+                        }
                     } else {
-                        newX += overlapX;
-                    }
-                } else {
-                    if (draggedNode.y < otherNode.y) {
-                        newY -= overlapY;
-                    } else {
-                        newY += overlapY;
+                        if (movingNode.y < staticNode.y) {
+                            adjustedDeltaY = Math.min(adjustedDeltaY, deltaY - overlapY);
+                        } else {
+                            adjustedDeltaY = Math.max(adjustedDeltaY, deltaY + overlapY);
+                        }
                     }
                 }
             }
         }
 
         setNodes((prevNodes) =>
-            prevNodes.map((node) => (node.id === id ? { ...node, x: newX, y: newY } : node))
+            prevNodes.map((node) => 
+                nodesToMove.has(node.id) 
+                    ? { 
+                        ...node, 
+                        x: node.x + adjustedDeltaX,
+                        y: node.y + adjustedDeltaY 
+                    } 
+                    : node
+            )
         );
     };
 
