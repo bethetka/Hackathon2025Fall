@@ -20,7 +20,7 @@ export interface NodeEditorHandle {
     deserialize: (nodes: INodeInfo[]) => void;
 }
 
-const NodeEditor = forwardRef<NodeEditorHandle>((props, ref) => {
+const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
     const BOUND_SCALE = 3;
     const MIN_ZOOM = 0.5;
     const MAX_ZOOM = 4;
@@ -46,12 +46,18 @@ const NodeEditor = forwardRef<NodeEditorHandle>((props, ref) => {
     const [selectedNode, setSelectedNode] = useState<INodeInfo | null>(null);
     const [nodeSelectorOpen, setNodeSelectorOpen] = useState(false);
     const [nodeValidationErrors, setNodeValidationErrors] = useState<Record<number, z.ZodError>>({});
+    
+    const [selectedNodeIds, setSelectedNodeIds] = useState<Set<number>>(new Set());
+    const [isMarqueeSelecting, setIsMarqueeSelecting] = useState(false);
+    const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+    const [marqueeStart, setMarqueeStart] = useState<{ x: number; y: number } | null>(null);
+    const [nodesWithinMarquee, setNodesWithinMarquee] = useState<Set<number>>(new Set());
 
     const handleNodeDrag = (id: number, x: number, y: number) => {
         let newX = x;
         let newY = y;
 
-        let snapped = snapToGrid(newX, newY, 40);
+        const snapped = snapToGrid(newX, newY, 40);
         newX = snapped.x;
         newY = snapped.y;
 
@@ -102,10 +108,31 @@ const NodeEditor = forwardRef<NodeEditorHandle>((props, ref) => {
         );
     };
 
+    const screenToWorld = useCallback((screenX: number, screenY: number) => {
+        if (!self.current) return { x: 0, y: 0 };
+        const rect = self.current.getBoundingClientRect();
+        const x = (screenX - rect.left - workspaceInfo.offsetX) / workspaceInfo.zoom;
+        const y = (screenY - rect.top - workspaceInfo.offsetY) / workspaceInfo.zoom;
+        return { x, y };
+    }, [workspaceInfo.offsetX, workspaceInfo.offsetY, workspaceInfo.zoom]);
+
     const handleMouseDown = (e: React.MouseEvent) => {
-        setIsPanning(true);
-        setInitialMousePos({ x: e.clientX, y: e.clientY });
-        setInitialOffset({ x: workspaceInfo.offsetX, y: workspaceInfo.offsetY });
+        if (e.ctrlKey || e.metaKey) {
+            setIsMarqueeSelecting(true);
+            const worldPos = screenToWorld(e.clientX, e.clientY);
+            setMarqueeStart(worldPos);
+            setMarqueeRect({ 
+                x: worldPos.x, 
+                y: worldPos.y, 
+                width: 0, 
+                height: 0 
+            });
+            setSelectedNodeIds(new Set());
+        } else {
+            setIsPanning(true);
+            setInitialMousePos({ x: e.clientX, y: e.clientY });
+            setInitialOffset({ x: workspaceInfo.offsetX, y: workspaceInfo.offsetY });
+        }
     };
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -127,15 +154,89 @@ const NodeEditor = forwardRef<NodeEditorHandle>((props, ref) => {
                 offsetX: Math.max(minOffsetX, Math.min(maxOffsetX, newOffsetX)),
                 offsetY: Math.max(minOffsetY, Math.min(maxOffsetY, newOffsetY)),
             }));
+        } else if (isMarqueeSelecting && marqueeStart && self.current) {
+                const currentWorldPos = screenToWorld(e.clientX, e.clientY);
+            
+            const newMarqueeRect = {
+                x: Math.min(marqueeStart.x, currentWorldPos.x),
+                y: Math.min(marqueeStart.y, currentWorldPos.y),
+                width: Math.abs(currentWorldPos.x - marqueeStart.x),
+                height: Math.abs(currentWorldPos.y - marqueeStart.y)
+            };
+            setMarqueeRect(newMarqueeRect);
+
+            const newNodesWithinMarquee = new Set<number>();
+            nodes.forEach(node => {
+                const nodeLeft = node.x;
+                const nodeRight = node.x + NODE_WIDTH;
+                const nodeTop = node.y;
+                const nodeBottom = node.y + NODE_HEIGHT;
+                
+                const marqueeLeft = newMarqueeRect.x;
+                const marqueeRight = newMarqueeRect.x + newMarqueeRect.width;
+                const marqueeTop = newMarqueeRect.y;
+                const marqueeBottom = newMarqueeRect.y + newMarqueeRect.height;
+                
+                const intersects = !(nodeRight < marqueeLeft || 
+                                   nodeLeft > marqueeRight || 
+                                   nodeBottom < marqueeTop || 
+                                   nodeTop > marqueeBottom);
+                
+                if (intersects) {
+                    newNodesWithinMarquee.add(node.id);
+                }
+            });
+            setNodesWithinMarquee(newNodesWithinMarquee);
         }
-    }, [isPanning, initialMousePos, initialOffset, workspaceInfo]);
+    }, [isPanning, isMarqueeSelecting, initialMousePos, initialOffset, workspaceInfo, marqueeStart, screenToWorld, nodes]);
 
     const handleMouseUp = useCallback(() => {
-        setIsPanning(false);
-    }, []);
+        if (isPanning) {
+            setIsPanning(false);
+        } else if (isMarqueeSelecting) {
+            if (marqueeRect && self.current) {
+                if (Math.abs(marqueeRect.width) > 2 || Math.abs(marqueeRect.height) > 2) {
+                    const selectedIds = new Set<number>();
+                    
+                    nodes.forEach(node => {
+                        const nodeLeft = node.x;
+                        const nodeRight = node.x + NODE_WIDTH;
+                        const nodeTop = node.y;
+                        const nodeBottom = node.y + NODE_HEIGHT;
+                        
+                        const marqueeLeft = marqueeRect.x;
+                        const marqueeRight = marqueeRect.x + marqueeRect.width;
+                        const marqueeTop = marqueeRect.y;
+                        const marqueeBottom = marqueeRect.y + marqueeRect.height;
+                        
+                        const intersects = !(nodeRight < marqueeLeft || 
+                                          nodeLeft > marqueeRight || 
+                                          nodeBottom < marqueeTop || 
+                                          nodeTop > marqueeBottom);
+                        
+                        if (intersects) {
+                            selectedIds.add(node.id);
+                        }
+                    });
+                    
+                    if ((window.event as MouseEvent)?.ctrlKey || (window.event as MouseEvent)?.metaKey) {
+                        const newSelection = new Set([...selectedNodeIds, ...selectedIds]);
+                        setSelectedNodeIds(newSelection);
+                    } else {
+                        setSelectedNodeIds(selectedIds);
+                    }
+                }
+            }
+            
+            setIsMarqueeSelecting(false);
+            setMarqueeRect(null);
+            setMarqueeStart(null);
+            setNodesWithinMarquee(new Set());
+        }
+    }, [isPanning, isMarqueeSelecting, marqueeRect, nodes, selectedNodeIds]);
 
     useEffect(() => {
-        if (isPanning) {
+        if (isPanning || isMarqueeSelecting) {
             window.addEventListener("mousemove", handleMouseMove);
             window.addEventListener("mouseup", handleMouseUp);
         } else {
@@ -147,7 +248,7 @@ const NodeEditor = forwardRef<NodeEditorHandle>((props, ref) => {
             window.removeEventListener("mousemove", handleMouseMove);
             window.removeEventListener("mouseup", handleMouseUp);
         };
-    }, [isPanning, handleMouseMove, handleMouseUp]);
+    }, [isPanning, isMarqueeSelecting, handleMouseMove, handleMouseUp]);
 
     const handleScroll = useCallback((e: WheelEvent) => {
         e.preventDefault();
@@ -184,9 +285,30 @@ const NodeEditor = forwardRef<NodeEditorHandle>((props, ref) => {
         }));
     }, [workspaceInfo]);
 
-    const handleNodeClicked = (id: number) => {
-        setSelectedNode(nodes.find(i => i.id == id) || null);
-        setNodeInfoDrawerOpen(true);
+    const handleNodeClicked = (id: number, e?: React.MouseEvent) => {
+        if (e && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            setSelectedNodeIds(prev => {
+                const newSelection = new Set(prev);
+                if (newSelection.has(id)) {
+                    newSelection.delete(id);
+                } else {
+                    newSelection.add(id);
+                }
+                return newSelection;
+            });
+        } else {
+            setSelectedNode(nodes.find(i => i.id == id) || null);
+            setNodeInfoDrawerOpen(true);
+        }
+    }
+
+    const handleCanvasClick = (e: React.MouseEvent) => {
+        if (e.target === e.currentTarget && !isMarqueeSelecting && !e.ctrlKey && !e.metaKey) {
+            setSelectedNodeIds(new Set());
+        }
     }
 
     useEffect(() => {
@@ -312,6 +434,7 @@ const NodeEditor = forwardRef<NodeEditorHandle>((props, ref) => {
                         backgroundSize: "40px 40px",
                     }}
                     onMouseDown={handleMouseDown}
+                    onClick={handleCanvasClick}
                 >
                     {nodes.map((i) => (
                         <Node 
@@ -322,8 +445,25 @@ const NodeEditor = forwardRef<NodeEditorHandle>((props, ref) => {
                             onNodeDrag={handleNodeDrag} 
                             onNodeClicked={handleNodeClicked}
                             hasError={nodeValidationErrors[i.id] !== undefined}
+                            isSelected={selectedNodeIds.has(i.id)}
+                            isWithinMarquee={nodesWithinMarquee.has(i.id)}
+                            isMarqueeSelecting={isMarqueeSelecting}
                         />
                     ))}
+                    
+                    {/* Marquee selection rectangle */}
+                    {marqueeRect && (
+                        <div
+                            className="absolute border-2 border-blue-500 pointer-events-none"
+                            style={{
+                                left: `${marqueeRect.x}px`,
+                                top: `${marqueeRect.y}px`,
+                                width: `${marqueeRect.width}px`,
+                                height: `${marqueeRect.height}px`,
+                                backgroundColor: 'rgba(0, 150, 255, 0.1)',
+                            }}
+                        />
+                    )}
                 </div>
             </div>
         </>
