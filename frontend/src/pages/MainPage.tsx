@@ -1,10 +1,10 @@
 import NodeEditor, { type NodeEditorHandle } from "@/components/hackathon/node-editor";
-import React, { type ChangeEvent, useRef, useState } from "react";
+import React, { type ChangeEvent, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Check, Container, Copy, Download, FileJson, Keyboard, Plus, RefreshCw, Upload, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Check, Container, Copy, Download, FileJson, Keyboard, Plus, RefreshCw, Redo2, Undo2, Upload, X, ZoomIn, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildDockerComposeYaml } from "@/lib/generator";
 import { parseDockerCompose } from "@/lib/composeParser";
@@ -13,6 +13,13 @@ export const MainPage: React.FC = () => {
     const nodeEditorRef = useRef<NodeEditorHandle>(null);
     const importFileInputRef = useRef<HTMLInputElement>(null);
     const composeFileInputRef = useRef<HTMLInputElement>(null);
+    const [canUndo, setCanUndo] = useState(false);
+    const [canRedo, setCanRedo] = useState(false);
+
+    const handleHistoryChange = useCallback((canUndo: boolean, canRedo: boolean) => {
+        setCanUndo(canUndo);
+        setCanRedo(canRedo);
+    }, []);
 
     const [isSerializeDialogOpen, setIsSerializeDialogOpen] = useState(false);
     const [serializeContent, setSerializeContent] = useState("");
@@ -210,7 +217,7 @@ export const MainPage: React.FC = () => {
     return (
         <div className="relative flex h-screen w-full overflow-hidden bg-background text-foreground">
             <div className="h-full w-full">
-                <NodeEditor ref={nodeEditorRef} />
+                <NodeEditor ref={nodeEditorRef} onHistoryChange={handleHistoryChange} />
             </div>
 
             <input
@@ -243,6 +250,24 @@ export const MainPage: React.FC = () => {
                                     Add Node
                                 </Button>
                                 <div className="flex gap-2">
+                                    <Button
+                                        size="icon"
+                                        variant="outline"
+                                        onClick={() => nodeEditorRef.current?.undo()}
+                                        disabled={!canUndo}
+                                        title="Undo (Ctrl+Z)"
+                                    >
+                                        <Undo2 className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                        size="icon"
+                                        variant="outline"
+                                        onClick={() => nodeEditorRef.current?.redo()}
+                                        disabled={!canRedo}
+                                        title="Redo (Ctrl+Y or Ctrl+Shift+Z)"
+                                    >
+                                        <Redo2 className="h-4 w-4" />
+                                    </Button>
                                     <Button
                                         size="icon"
                                         variant="outline"
@@ -323,6 +348,22 @@ export const MainPage: React.FC = () => {
                                     <kbd className="rounded border bg-background px-2 py-1 text-[10px] font-semibold uppercase tracking-wide">A</kbd>
                                 </div>
                                 <span>Add Node</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1">
+                                    <kbd className="rounded border bg-background px-2 py-1 text-[10px] font-semibold uppercase tracking-wide">Ctrl</kbd>
+                                    <span className="text-[10px] font-semibold text-muted-foreground">+</span>
+                                    <kbd className="rounded border bg-background px-2 py-1 text-[10px] font-semibold uppercase tracking-wide">Z</kbd>
+                                </div>
+                                <span>Undo</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1">
+                                    <kbd className="rounded border bg-background px-2 py-1 text-[10px] font-semibold uppercase tracking-wide">Ctrl</kbd>
+                                    <span className="text-[10px] font-semibold text-muted-foreground">+</span>
+                                    <kbd className="rounded border bg-background px-2 py-1 text-[10px] font-semibold uppercase tracking-wide">Y</kbd>
+                                </div>
+                                <span>Redo</span>
                             </div>
                             <div className="flex items-center gap-3">
                                 <span className="rounded border bg-background px-2 py-1 text-[10px] font-semibold uppercase tracking-wide">Wheel</span>
