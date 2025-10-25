@@ -1,9 +1,7 @@
 import { Node, COLLISION_PADDING, NODE_HEIGHT, NODE_WIDTH, type INodeInfo, type IWorkspaceInfo } from "@/components/hackathon/node";
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "../ui/drawer";
-import { Button } from "../ui/button";
-import { nodeTypes } from "@/lib/nodes";
 import { NodeSettingsDrawer } from "./node-settings-drawer";
+import { NodeSelector } from "./node-selector";
 
 function snapToGrid(x: number, y: number, gridSize = 1, gridSizeY = gridSize) {
     const snap = (value: number, size: number) =>
@@ -39,23 +37,7 @@ const NodeEditor: React.FC = () => {
     const self = useRef<HTMLDivElement>(null);
     const [nodeInfoDrawerOpen, setNodeInfoDrawerOpen] = useState(false);
     const [selectedNode, setSelectedNode] = useState<INodeInfo | null>(null);
-
-    useEffect(() => {
-        setNodes([
-            {
-                id: 1,
-                type: "redis",
-                x: (workspaceInfo.width * BOUND_SCALE) / 2 - 200,
-                y: (workspaceInfo.height * BOUND_SCALE) / 2,
-            },
-            {
-                id: 2,
-                type: "mongo",
-                x: (workspaceInfo.width * BOUND_SCALE) / 2 + 100,
-                y: (workspaceInfo.height * BOUND_SCALE) / 2 + 80,
-            },
-        ]);
-    }, []);
+    const [nodeSelectorOpen, setNodeSelectorOpen] = useState(false);
 
     const handleNodeDrag = (id: number, x: number, y: number) => {
         let newX = x;
@@ -199,7 +181,6 @@ const NodeEditor: React.FC = () => {
         setNodeInfoDrawerOpen(true);
     }
 
-
     useEffect(() => {
         const currentRef = self.current;
         if (currentRef) {
@@ -212,6 +193,16 @@ const NodeEditor: React.FC = () => {
         }
     }, [self, handleScroll])
 
+    function handleNewNode(nodeType: string): void {
+        const worldCenterX = (workspaceInfo.width / 2 - workspaceInfo.offsetX) / workspaceInfo.zoom;
+        const worldCenterY = (workspaceInfo.height / 2 - workspaceInfo.offsetY) / workspaceInfo.zoom;
+        setNodes((s) => [...s, { id: s.length + 1, type: nodeType, x: worldCenterX, y: worldCenterY, fields: {} }])
+    }
+
+    function handleSetFields(fields: Record<string, object>): void {
+        nodes.find(i => i.id == selectedNode!.id)!.fields = fields;
+    }
+
     return (
         <div
             style={{
@@ -223,7 +214,8 @@ const NodeEditor: React.FC = () => {
             }}
             ref={self}
         >
-            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode}/>
+            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields}/>
+            <NodeSelector open={nodeSelectorOpen} setOpen={setNodeSelectorOpen} onSelected={handleNewNode} />
             <div
                 style={{
                     width: `${workspaceInfo.width * BOUND_SCALE}px`,
@@ -239,7 +231,7 @@ const NodeEditor: React.FC = () => {
                 onMouseDown={handleMouseDown}
             >
                 {nodes.map((i) => (
-                    <Node info={i} key={i.id} workspaceInfo={workspaceInfo} onNodeDrag={handleNodeDrag} onNodeClicked={handleNodeClicked} />
+                    <Node interactable={true} info={i} key={i.id} workspaceInfo={workspaceInfo} onNodeDrag={handleNodeDrag} onNodeClicked={handleNodeClicked} />
                 ))}
             </div>
         </div>
