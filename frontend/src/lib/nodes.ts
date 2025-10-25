@@ -20,26 +20,33 @@ export const nodeTypes: Record<string, INodeType> = {
             password: z.string().nonempty().describe("format:password")
         })
     },
-    "mongo": { 
-        icon: mongoIcon, 
-        name: "MongoDB", 
+    "mongo": {
+        icon: mongoIcon,
+        name: "MongoDB",
         parameters: z.object({
             database: z.string().nonempty(),
             username: z.string().nonempty(),
             password: z.string().nonempty().describe("format:password")
-        }) 
+        })
     },
-    "node": { 
-        icon: nodeIcon, 
-        name: "NodeJS", 
-        parameters: z.object() 
+    "node": {
+        icon: nodeIcon,
+        name: "NodeJS",
+        parameters: z.object()
     },
-    "docker": { 
-        icon: dockerIcon, 
-        name: "Docker", 
-        parameters: z.object() 
+    "docker": {
+        icon: dockerIcon,
+        name: "Docker",
+        parameters: z.object({
+            image: z.string().nonempty(),
+            environment: z.record(z.string(), z.string()).optional(),
+            volumes: z.record(z.string(), z.string()).optional(),
+            ports: z.array(z.string()).optional(),
+        })
     },
 }
+
+export type DockerParameters = z.infer<typeof nodeTypes>;
 
 export interface ICategoryForCreation {
     name: string;
