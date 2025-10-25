@@ -200,7 +200,11 @@ const NodeEditor: React.FC = () => {
     }
 
     function handleSetFields(fields: Record<string, object>): void {
-        nodes.find(i => i.id == selectedNode!.id)!.fields = fields;
+        setNodes(prevNodes =>
+            prevNodes.map(node =>
+                node.id === selectedNode!.id ? { ...node, fields } : node
+            )
+        );
     }
 
     return (
@@ -214,7 +218,7 @@ const NodeEditor: React.FC = () => {
             }}
             ref={self}
         >
-            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields}/>
+            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields} />
             <NodeSelector open={nodeSelectorOpen} setOpen={setNodeSelectorOpen} onSelected={handleNewNode} />
             <div
                 style={{

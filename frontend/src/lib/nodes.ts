@@ -17,16 +17,16 @@ export const nodeTypes: Record<string, INodeType> = {
         icon: redisIcon,
         name: "Redis",
         parameters: z.object({
-            password: z.string()
+            password: z.string().nonempty().describe("format:password")
         })
     },
     "mongo": { 
         icon: mongoIcon, 
         name: "MongoDB", 
         parameters: z.object({
-            database: z.string(),
-            username: z.string(),
-            password: z.string()
+            database: z.string().nonempty(),
+            username: z.string().nonempty(),
+            password: z.string().nonempty().describe("format:password")
         }) 
     },
     "node": { 

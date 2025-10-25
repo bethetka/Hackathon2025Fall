@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import type { INodeInfo } from "./node";
 import { nodeTypes } from "@/lib/nodes";
 import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from "../ui/drawer";
@@ -16,14 +16,60 @@ interface INodeSettingsDrawerProps {
 
 export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: INodeSettingsDrawerProps) => {
     if (!props.selectedNode) return <></>
-    let nodeType = props.selectedNode != null ? nodeTypes[props.selectedNode.type] : null;
-    let params = z.toJSONSchema(nodeType?.parameters || z.object())
-    let [fields, setFields] = React.useState<Record<string, object>>(props.selectedNode!.fields);
-    return <Drawer open={props.open} onOpenChange={(v) => {
-        props.setOpen(v);
-        if (!v) {
+    
+    const nodeType = nodeTypes[props.selectedNode.type];
+    const [validationSchema, setValidationSchema] = useState<z.ZodTypeAny | null>(null);
+    const [fields, setFields] = useState<Record<string, any>>({});
+    const [validationError, setValidationError] = useState<z.ZodError | null>(null);
+    
+    useEffect(() => {
+        if (props.selectedNode) {
+            setFields(props.selectedNode.fields);
+            setValidationSchema(nodeType?.parameters || z.object({}));
+            setValidationError(null);
+        }
+    }, [props.selectedNode, nodeType]);
+    
+    const params = validationSchema ? z.toJSONSchema(validationSchema) : { properties: {} };
+    
+    const validate = () => {
+        if (!validationSchema) return { success: true, error: null };
+        
+        try {
+            validationSchema.parse(fields);
+            return { success: true, error: null };
+        } catch (error) {
+            return { 
+                success: false, 
+                error: error instanceof z.ZodError ? error : null 
+            };
+        }
+    };
+    
+    const handleSave = () => {
+        const { success, error } = validate();
+        if (success) {
             props.setFields(fields);
+            props.setOpen(false);
             setFields({});
+            setValidationError(null);
+        } else {
+            setValidationError(error);
+        }
+    };
+    
+    const handleCancel = () => {
+        if (props.selectedNode) {
+            setFields(props.selectedNode.fields);
+        }
+        props.setOpen(false);
+        setFields({});
+        setValidationError(null);
+    };
+
+    return <Drawer open={props.open} onOpenChange={(v) => {
+        if (!v && !validationError) {
+            props.setOpen(v);
         }
     }} direction="right">
         {(props.selectedNode) && <DrawerContent>
@@ -32,14 +78,41 @@ export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: IN
             </DrawerHeader>
             <div className="flex flex-col gap-4 p-4">
                 <h1 className="text-lg">Parameters</h1>
-                {Object.entries(params.properties!).map(i => <ZodFieldEditor key={i[0]} propName={i[0]} schema={i[1] as JSONSchema.JSONSchema} setValue={(v) => setFields(f => ({...f, [i[0]]: v}))} value={fields[i[0]]}/>)}   
+                {Object.entries(params.properties || {}).map(([propName, schema]) => {
+                    const error = validationError?.issues.find(e => e.path[0] === propName);
+                    return (
+                        <ZodFieldEditor 
+                            key={propName} 
+                            propName={propName} 
+                            schema={schema as JSONSchema.JSONSchema} 
+                            setValue={(v) => {
+                                setFields(prev => ({...prev, [propName]: v}));
+                                if (validationError) {
+                                    const newErrors = validationError.issues.filter(
+                                        e => e.path[0] !== propName
+                                    );
+                                    setValidationError(newErrors.length > 0 ? 
+                                        new z.ZodError(newErrors) : null);
+                                }
+                            }} 
+                            value={fields[propName]}
+                            error={error}
+                        />
+                    );
+                })}   
             </div>
+            {validationError && (
+                <div className="px-4 mb-4 text-red-500 text-sm">
+                    Please fix the errors above before saving.
+                </div>
+            )}
             <DrawerFooter>
-                <Button>Save</Button>
-
-                <Button className="w-full" variant={"outline"}>
-                    Cancel
-                </Button>
+                <Button onClick={handleSave}>Save</Button>
+                <DrawerClose asChild>
+                    <Button className="w-full" variant={"outline"} onClick={handleCancel}>
+                        Cancel
+                    </Button>
+                </DrawerClose>
             </DrawerFooter>
         </DrawerContent>}
     </Drawer>;

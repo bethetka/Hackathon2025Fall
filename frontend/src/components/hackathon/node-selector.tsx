@@ -20,11 +20,12 @@ export const NodeSelector: React.FC<INodeSelectorProps> = (props: INodeSelectorP
                 e.preventDefault()
                 props.setOpen(!props.open)
             }
-
-            if (e.key === 'Backspace' && search.length == 0) {
-                console.log(search, search.length)
-                e.preventDefault()
-                setPages((pages) => pages.slice(0, -1))
+            if (props.open) {
+                if (e.key === 'Backspace' && search.length == 0) {
+                    console.log(search, search.length)
+                    e.preventDefault()
+                    setPages((pages) => pages.slice(0, -1))
+                }
             }
         }, [search]
     )
