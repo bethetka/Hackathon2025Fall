@@ -6,11 +6,14 @@ import { Button } from "../ui/button";
 import * as z from "zod";
 import type { JSONSchema } from "zod/v4/core";
 import { ZodFieldEditor } from "./field-editor";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader } from "../ui/dialog";
+import { DialogTitle } from "@radix-ui/react-dialog";
 
 interface INodeSettingsDrawerProps {
     open: boolean;
     setOpen: (value: boolean) => void;
     setFields: (value: Record<string, object>) => void;
+    deleteNode: (id: number) => void;
     selectedNode: INodeInfo | null;
 }
 
@@ -21,7 +24,7 @@ export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: IN
     const [validationSchema, setValidationSchema] = useState<z.ZodTypeAny | null>(null);
     const [fields, setFields] = useState<Record<string, any>>({});
     const [validationError, setValidationError] = useState<z.ZodError | null>(null);
-    
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
     useEffect(() => {
         if (props.selectedNode) {
             setFields(props.selectedNode.fields);
@@ -67,11 +70,37 @@ export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: IN
         setValidationError(null);
     };
 
+    function handleDelete(): void {
+        props.deleteNode(props.selectedNode?.id!);
+        props.setOpen(false);
+        setFields({});
+        setValidationError(null);
+    }
+
     return <Drawer open={props.open} onOpenChange={(v) => {
         if (!v && !validationError) {
             props.setOpen(v);
         }
     }} direction="right">
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Are you sure?</DialogTitle>
+                    <DialogDescription>
+                        Do you really want to delete this node?
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                    <Button variant={"destructive"} onClick={() => {
+                        setDeleteDialogOpen(false);
+                        handleDelete();
+                    }}>Yes</Button>
+                    <DialogClose asChild>
+                        <Button variant={"outline"}>No</Button>
+                    </DialogClose>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
         {(props.selectedNode) && <DrawerContent>
             <DrawerHeader>
                 <DrawerTitle>Editing {nodeType!.name}</DrawerTitle>
@@ -108,6 +137,9 @@ export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: IN
             )}
             <DrawerFooter>
                 <Button onClick={handleSave}>Save</Button>
+                <Button onClick={() => {
+                    setDeleteDialogOpen(true);
+                }} variant={"destructive"}>Delete</Button>
                 <DrawerClose asChild>
                     <Button className="w-full" variant={"outline"} onClick={handleCancel}>
                         Cancel

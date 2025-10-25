@@ -16,8 +16,8 @@ function snapToGrid(x: number, y: number, gridSize = 1, gridSizeY = gridSize) {
 }
 
 export interface NodeEditorHandle {
-    serialize: () => void;
-    deserialize: () => void;
+    serialize: () => INodeInfo[];
+    deserialize: (nodes: INodeInfo[]) => void;
 }
 
 const NodeEditor = forwardRef<NodeEditorHandle>((props, ref) => {
@@ -239,63 +239,55 @@ const NodeEditor = forwardRef<NodeEditorHandle>((props, ref) => {
             const errorMessages = Object.entries(errors).map(([id, err]) => {
                 return `Node ${id}: ${err.issues.map(e => e.message).join(', ')}`;
             });
-            alert(`Validation errors:\n${errorMessages.join('\n')}`);
-        } else {
-            alert(JSON.stringify(nodes, null, 2));
+            throw new Error(`Validation errors:\n${errorMessages.join('\n')}`);
         }
+
+        return [...nodes];
     };
 
-    const deserialize = () => {
-        const json = prompt("Enter serialized JSON");
-        if (!json) return;
-
-        try {
-            const data = JSON.parse(json);
-            if (!Array.isArray(data)) {
-                throw new Error("Expected an array of nodes");
+    const deserialize = (data: INodeInfo[]) => {
+        const errors: string[] = [];
+        for (const node of data) {
+            if (typeof node.id !== 'number' || typeof node.type !== 'string' || !node.fields) {
+                errors.push(`Invalid node structure: ${JSON.stringify(node)}`);
+                continue;
             }
 
-            const errors: string[] = [];
-            for (const node of data) {
-                if (typeof node.id !== 'number' || typeof node.type !== 'string' || !node.fields) {
-                    errors.push(`Invalid node structure: ${JSON.stringify(node)}`);
-                    continue;
-                }
-
-                const nodeType = nodeTypes[node.type];
-                if (!nodeType) {
-                    errors.push(`Unknown node type: ${node.type}`);
-                    continue;
-                }
-
-                try {
-                    nodeType.parameters.parse(node.fields);
-                } catch (e) {
-                    if (e instanceof z.ZodError) {
-                        errors.push(`Node ${node.id}: ${e.issues.map(err => err.message).join(', ')}`);
-                    }
-                }
+            const nodeType = nodeTypes[node.type];
+            if (!nodeType) {
+                errors.push(`Unknown node type: ${node.type}`);
+                continue;
             }
 
-            if (errors.length > 0) {
-                throw new Error(errors.join('\n'));
+            try {
+                nodeType.parameters.parse(node.fields);
+            } catch (e) {
+                if (e instanceof z.ZodError) {
+                    errors.push(`Node ${node.id}: ${e.issues.map(err => err.message).join(', ')}`);
+                }
             }
-
-            setNodes(data);
-            setNodeValidationErrors({});
-        } catch (e) {
-            alert(`Error: ${e instanceof Error ? e.message : String(e)}`);
         }
+
+        if (errors.length > 0) {
+            throw new Error(errors.join('\n'));
+        }
+
+        setNodes(data);
+        setNodeValidationErrors({});
     };
 
     useImperativeHandle(ref, () => ({
         serialize,
         deserialize
-    }), [nodes]);
+    }), [nodes, setNodes]);
+
+    function handleDeleteNode(id: number): void {
+        setNodes((ns) => ns.filter(i => i.id !== id))
+    }
 
     return (
         <>
-            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields} />
+            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields} deleteNode={handleDeleteNode}/>
             <NodeSelector open={nodeSelectorOpen} setOpen={setNodeSelectorOpen} onSelected={handleNewNode} />
             <div
                 style={{
@@ -307,7 +299,6 @@ const NodeEditor = forwardRef<NodeEditorHandle>((props, ref) => {
                 }}
                 ref={self}
             >
-
                 <div
                     style={{
                         width: `${workspaceInfo.width * BOUND_SCALE}px`,
