@@ -1,4 +1,5 @@
 import type { INodeInfo } from "@/components/hackathon/node";
+import { nodeTypes } from "./nodes";
 
 interface IDockerComposeService {
     image: string;
@@ -12,5 +13,17 @@ interface IDockerCompose {
 }
 
 function generateDockerCompose(nodes: INodeInfo[]): IDockerCompose {
-    return {services: []}
+    let services: IDockerComposeService[] = [];
+
+    // for (const node of nodes) {
+    //     let nodeType = nodeTypes[node.type]!;
+    //     switch (node.type) {
+    //         case "docker":
+    //             break;
+    //         default:
+    //             console.warn(node.type, "unsupported")
+    //     }   
+    // }
+
+    return {services}
 }

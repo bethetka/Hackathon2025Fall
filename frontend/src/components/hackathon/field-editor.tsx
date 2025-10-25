@@ -1,10 +1,10 @@
 import { Input } from "@/components/ui/input";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -12,8 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Eye, EyeOff } from "lucide-react";
 import * as z from "zod/v4/core";
-import { AlertCircle } from "lucide-react";
-import React from "react";
+import { AlertCircle, X } from "lucide-react";
+import React, { useEffect, useState } from "react";
 
 interface ZodFieldEditorProps {
   propName: string;
@@ -23,6 +23,27 @@ interface ZodFieldEditorProps {
   error?: z.$ZodIssue | null;
 }
 
+const getDefaultValueForSchema = (schema: z.JSONSchema.JSONSchema) => {
+  if (schema.type === "string") return "";
+  if (schema.type === "number" || schema.type === "integer") return 0;
+  if (schema.type === "boolean") return false;
+  if (schema.type === "array") return [];
+  if (schema.type === "object") {
+    if (schema.additionalProperties) {
+      return {};
+    }
+    if (schema.properties) {
+      const defaults: Record<string, any> = {};
+      Object.entries(schema.properties).forEach(([key, propSchema]) => {
+        defaults[key] = getDefaultValueForSchema(propSchema as z.JSONSchema.JSONSchema);
+      });
+      return defaults;
+    }
+    return {};
+  }
+  return undefined;
+};
+
 export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
   propName,
   schema,
@@ -31,8 +52,22 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
   error
 }) => {
   const isPasswordField = schema.description?.includes("format:password") || false;
-  const [showPassword, setShowPassword] = React.useState(false);
-  
+  const [showPassword, setShowPassword] = useState(false);
+
+  const [tempRecordKeys, setTempRecordKeys] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setTempRecordKeys(prev => {
+      const next = { ...prev };
+      Object.keys(prev).forEach(key => {
+        if (!(key in (value || {}))) {
+          delete next[key];
+        }
+      });
+      return next;
+    });
+  }, [value]);
+
   const renderError = () => {
     if (error) {
       return (
@@ -47,7 +82,7 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
-    
+
     if (schema.type === "number" || schema.type === "integer") {
       if (newValue === "") {
         setValue(undefined);
@@ -62,8 +97,8 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
   if (isPasswordField) {
     return (
       <div className="space-y-2">
-        <Label 
-          htmlFor={propName} 
+        <Label
+          htmlFor={propName}
           className={`flex justify-between items-center ${error ? "text-red-500" : ""}`}
         >
           <span>{schema.title || propName}</span>
@@ -103,8 +138,8 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
         <Label htmlFor={propName} className={error ? "text-red-500" : ""}>
           {schema.title || propName}
         </Label>
-        <Select 
-          value={value !== undefined ? String(value) : undefined} 
+        <Select
+          value={value !== undefined ? String(value) : undefined}
           onValueChange={setValue}
         >
           <SelectTrigger id={propName} className={error ? "border-red-500" : ""}>
@@ -112,8 +147,8 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
           </SelectTrigger>
           <SelectContent>
             {schema.enum.map((option, index) => (
-              <SelectItem 
-                key={`${propName}-enum-${index}`} 
+              <SelectItem
+                key={`${propName}-enum-${index}`}
                 value={String(option)}
               >
                 {option}
@@ -135,8 +170,8 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
           onCheckedChange={setValue}
           className={error ? "border-red-500" : ""}
         />
-        <Label 
-          htmlFor={propName} 
+        <Label
+          htmlFor={propName}
           className={`font-normal ${error ? "text-red-500" : ""}`}
         >
           {schema.title || propName}
@@ -147,10 +182,10 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
   }
 
   const isTextarea = schema.maxLength && schema.maxLength > 100;
-  
+
   if (schema.type === "string") {
     let inputType = "text";
-    
+
     if (schema.format === "date") {
       inputType = "date";
     } else if (schema.format === "email") {
@@ -210,6 +245,236 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
           placeholder={schema.description}
           className={error ? "border-red-500" : ""}
         />
+        {renderError()}
+      </div>
+    );
+  }
+
+  if (schema.type === "object" && schema.properties) {
+    return (
+      <div className="space-y-2 border rounded-lg p-4 bg-card">
+        <div className="flex justify-between items-center mb-3">
+          <Label className={error ? "text-red-500 font-medium" : "font-medium"}>
+            {schema.title || propName}
+          </Label>
+          {schema.description && (
+            <span className="text-xs text-muted-foreground">
+              {schema.description}
+            </span>
+          )}
+        </div>
+
+        <div className="pl-2 space-y-4 border-l-2 border-border">
+          {Object.entries(schema.properties).map(([key, propSchema]) => (
+            <div key={key} className="pl-4">
+              <ZodFieldEditor
+                propName={key}
+                schema={propSchema as z.JSONSchema.JSONSchema}
+                value={value ? value[key] : undefined}
+                setValue={(newValue) => {
+                  setValue({
+                    ...(value || {}),
+                    [key]: newValue
+                  });
+                }}
+                error={error}
+              />
+            </div>
+          ))}
+        </div>
+        {renderError()}
+      </div>
+    );
+  }
+
+  if (schema.type === "array") {
+    const itemSchema = schema.items as z.JSONSchema.JSONSchema;
+
+    return (
+      <div className="space-y-2">
+        <Label htmlFor={propName} className={error ? "text-red-500" : ""}>
+          {schema.title || propName}
+        </Label>
+        <div className="space-y-2">
+          {(value || []).map((item: any, index: number) => (
+            <div key={index} className="border p-3 rounded-md bg-muted/30 relative">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute -top-2 -right-2 h-6 w-6 rounded-full shadow-sm"
+                onClick={() => {
+                  const newArray = [...(value || [])];
+                  newArray.splice(index, 1);
+                  setValue(newArray);
+                }}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+              <ZodFieldEditor
+                propName={`${propName}[${index}]`}
+                schema={itemSchema}
+                value={item}
+                setValue={(newValue) => {
+                  const newArray = [...(value || [])];
+                  newArray[index] = newValue;
+                  setValue(newArray);
+                }}
+                error={error}
+              />
+            </div>
+          ))}
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={() => {
+              let newItem;
+              if (itemSchema.type === "object") {
+                newItem = {};
+              } else if (itemSchema.type === "array") {
+                newItem = [];
+              } else {
+                newItem = itemSchema.type === "string" ? "" :
+                  itemSchema.type === "number" || itemSchema.type === "integer" ? 0 :
+                    itemSchema.type === "boolean" ? false : undefined;
+              }
+              setValue([...(value || []), newItem]);
+            }}
+          >
+            + Add {schema.title || "Item"}
+          </Button>
+        </div>
+        {renderError()}
+      </div>
+    );
+  }
+
+  if (schema.type === "object" && schema.additionalProperties) {
+    const valueSchema = schema.additionalProperties as z.JSONSchema.JSONSchema;
+    const currentValue = value && typeof value === 'object' ? value : {};
+
+    return (
+      <div className="space-y-2">
+        <div className="flex justify-between items-center">
+          <Label className={error ? "text-red-500 font-medium" : "font-medium"}>
+            {schema.title || propName}
+          </Label>
+          {schema.description && (
+            <span className="text-xs text-muted-foreground">
+              {schema.description}
+            </span>
+          )}
+        </div>
+
+        <div className="space-y-2 pl-2">
+          {Object.entries(currentValue).map(([key, val], index) => (
+            <div
+              key={key}
+              className="flex items-start gap-2 p-3 bg-muted/30 rounded border relative"
+            >
+              <div className="absolute -top-2 left-3 px-1.5 bg-background text-xs text-muted-foreground">
+                Entry {index + 1}
+              </div>
+
+              <div className="flex-1 grid grid-cols-[1fr,3fr] gap-2">
+                <div>
+                  <Label
+                    htmlFor={`${propName}-key-${index}`}
+                    className="text-xs font-normal mb-1 block"
+                  >
+                    Key
+                  </Label>
+                  <Input
+                    id={`${propName}-key-${index}`}
+                    value={tempRecordKeys[key] ?? key}
+                    onChange={(e) => {
+                      const newTempKey = e.target.value;
+                      setTempRecordKeys(prev => ({
+                        ...prev,
+                        [key]: newTempKey
+                      }));
+                    }}
+                    onBlur={() => {
+                      const tempKey = tempRecordKeys[key] ?? key;
+                      if (tempKey !== key && tempKey !== '') {
+                        const current = value && typeof value === 'object' ? value : {};
+                        const newValue = { ...current };
+                        delete newValue[key];
+                        newValue[tempKey] = val;
+                        setValue(newValue);
+                      }
+                      setTempRecordKeys(prev => {
+                        const next = { ...prev };
+                        delete next[key];
+                        return next;
+                      });
+                    }}
+                    placeholder="Property name"
+                    className="text-sm h-8"
+                  />
+                </div>
+
+                <div>
+                  <Label
+                    htmlFor={`${propName}-value-${index}`}
+                    className="text-xs font-normal mb-1 block"
+                  >
+                    Value
+                  </Label>
+                  <ZodFieldEditor
+                    propName={`${propName}.${key}`}
+                    schema={valueSchema}
+                    value={val}
+                    setValue={(newVal) => {
+                      const current = value && typeof value === 'object' ? value : {};
+                      setValue({
+                        ...current,
+                        [key]: newVal
+                      });
+                    }}
+                    error={error}
+                  />
+                </div>
+              </div>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => {
+                  const current = value && typeof value === 'object' ? value : {};
+                  const newValue = { ...current };
+                  delete newValue[key];
+                  setValue(newValue);
+
+                  setTempRecordKeys(prev => {
+                    const next = { ...prev };
+                    delete next[key];
+                    return next;
+                  });
+                }}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-1"
+            onClick={() => {
+              const current = value && typeof value === 'object' ? value : {};
+              const newKey = `key${Object.keys(current).length + 1}`;
+              setValue({
+                ...current,
+                [newKey]: getDefaultValueForSchema(valueSchema)
+              });
+            }}
+          >
+            + Add Entry
+          </Button>
+        </div>
         {renderError()}
       </div>
     );
