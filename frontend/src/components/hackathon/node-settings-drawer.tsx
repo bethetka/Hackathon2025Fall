@@ -12,9 +12,10 @@ import { DialogTitle } from "@radix-ui/react-dialog";
 interface INodeSettingsDrawerProps {
     open: boolean;
     setOpen: (value: boolean) => void;
-    setFields: (value: Record<string, object>) => void;
+    setFields: (value: Record<string, unknown>) => void;
     deleteNode: (id: number) => void;
     selectedNode: INodeInfo | null;
+    existingNetworks: string[];
 }
 
 export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: INodeSettingsDrawerProps) => {
@@ -22,7 +23,7 @@ export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: IN
     
     const nodeType = nodeTypes[props.selectedNode.type];
     const [validationSchema, setValidationSchema] = useState<z.ZodTypeAny | null>(null);
-    const [fields, setFields] = useState<Record<string, any>>({});
+    const [fields, setFields] = useState<Record<string, unknown>>({});
     const [validationError, setValidationError] = useState<z.ZodError | null>(null);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
     useEffect(() => {
@@ -109,13 +110,22 @@ export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: IN
                 <h1 className="text-lg">Parameters</h1>
                 {Object.entries(params.properties || {}).map(([propName, schema]) => {
                     const error = validationError?.issues.find(e => e.path[0] === propName);
+                    const suggestions = propName === "network" ? props.existingNetworks : undefined;
                     return (
                         <ZodFieldEditor 
                             key={propName} 
                             propName={propName} 
                             schema={schema as JSONSchema.JSONSchema} 
                             setValue={(v) => {
-                                setFields(prev => ({...prev, [propName]: v}));
+                                setFields(prev => {
+                                    const next = { ...prev };
+                                    if (v === undefined) {
+                                        delete next[propName];
+                                    } else {
+                                        next[propName] = v;
+                                    }
+                                    return next;
+                                });
                                 if (validationError) {
                                     const newErrors = validationError.issues.filter(
                                         e => e.path[0] !== propName
@@ -126,6 +136,7 @@ export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: IN
                             }} 
                             value={fields[propName]}
                             error={error}
+                            suggestions={suggestions}
                         />
                     );
                 })}   

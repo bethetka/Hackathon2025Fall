@@ -13,7 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Eye, EyeOff } from "lucide-react";
 import * as z from "zod/v4/core";
 import { AlertCircle, X } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandList
+} from "@/components/ui/command";
 
 interface ZodFieldEditorProps {
   propName: string;
@@ -21,6 +28,7 @@ interface ZodFieldEditorProps {
   value: any | undefined;
   setValue: (value: any) => void;
   error?: z.$ZodIssue | null;
+  suggestions?: string[];
 }
 
 const getDefaultValueForSchema = (schema: z.JSONSchema.JSONSchema) => {
@@ -49,10 +57,17 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
   schema,
   value,
   setValue,
-  error
+  error,
+  suggestions
 }) => {
   const isPasswordField = schema.description?.includes("format:password") || false;
   const [showPassword, setShowPassword] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const [internalValue, setInternalValue] = useState<string>(() => {
+    if (typeof value === "string") return value;
+    if (value === undefined || value === null) return "";
+    return String(value);
+  });
 
   const [tempRecordKeys, setTempRecordKeys] = useState<Record<string, string>>({});
 
@@ -68,6 +83,18 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
     });
   }, [value]);
 
+  useEffect(() => {
+    if (schema.type === "string") {
+      if (typeof value === "string") {
+        setInternalValue(value);
+      } else if (value === undefined || value === null) {
+        setInternalValue("");
+      } else {
+        setInternalValue(String(value));
+      }
+    }
+  }, [value, schema.type]);
+
   const renderError = () => {
     if (error) {
       return (
@@ -80,8 +107,8 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
     return null;
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
+  const handleInputValue = (newValue: string) => {
+    setInternalValue(newValue);
 
     if (schema.type === "number" || schema.type === "integer") {
       if (newValue === "") {
@@ -89,9 +116,12 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
       } else {
         setValue(schema.type === "integer" ? parseInt(newValue, 10) : parseFloat(newValue));
       }
-    } else {
+    } else if (schema.type === "string") {
       setValue(newValue);
     }
+  };
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    handleInputValue(e.target.value);
   };
 
   if (isPasswordField) {
@@ -185,6 +215,17 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
 
   if (schema.type === "string") {
     let inputType = "text";
+    const uniqueSuggestions = useMemo(
+      () => (suggestions ? Array.from(new Set(suggestions.filter(option => option.trim().length > 0))) : []),
+      [suggestions]
+    );
+    const filteredSuggestions = useMemo(() => {
+      if (!uniqueSuggestions.length) return [];
+      if (!internalValue) return uniqueSuggestions;
+      const lower = internalValue.toLowerCase();
+      return uniqueSuggestions.filter(option => option.toLowerCase().includes(lower));
+    }, [uniqueSuggestions, internalValue]);
+    const shouldShowSuggestions = isFocused && filteredSuggestions.length > 0;
 
     if (schema.format === "date") {
       inputType = "date";
@@ -202,21 +243,53 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
         {isTextarea ? (
           <Textarea
             id={propName}
-            value={value ?? ""}
-            onChange={(e) => setValue(e.target.value)}
+            value={internalValue ?? ""}
+            onChange={(e) => handleInputValue(e.target.value)}
             rows={4}
             placeholder={schema.description}
             className={error ? "border-red-500" : ""}
           />
         ) : (
-          <Input
-            id={propName}
-            type={inputType}
-            value={value ?? ""}
-            onChange={handleInputChange}
-            placeholder={schema.description}
-            className={error ? "border-red-500" : ""}
-          />
+          <div className="relative w-full">
+            <Input
+              id={propName}
+              type={inputType}
+              value={internalValue ?? ""}
+              onChange={handleInputChange}
+              onFocus={() => {
+                setIsFocused(true);
+              }}
+              onBlur={() => {
+                setTimeout(() => setIsFocused(false), 120);
+              }}
+              placeholder={schema.description}
+              className={error ? "border-red-500" : ""}
+              autoComplete="off"
+            />
+            {shouldShowSuggestions && (
+              <div className="absolute z-20 mt-2 w-full rounded-md border bg-popover shadow-md">
+                <Command>
+                  <CommandList>
+                    <CommandEmpty>No matches found.</CommandEmpty>
+                    <CommandGroup>
+                      {filteredSuggestions.map(option => (
+                        <CommandItem
+                          key={`${propName}-${option}`}
+                          value={option}
+                          onSelect={(val) => {
+                            handleInputValue(val);
+                            setIsFocused(false);
+                          }}
+                        >
+                          {option}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </div>
+            )}
+          </div>
         )}
         {renderError()}
       </div>
@@ -320,6 +393,7 @@ export const ZodFieldEditor: React.FC<ZodFieldEditorProps> = ({
                   setValue(newArray);
                 }}
                 error={error}
+                suggestions={suggestions}
               />
             </div>
           ))}

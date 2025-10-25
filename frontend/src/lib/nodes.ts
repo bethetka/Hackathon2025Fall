@@ -17,7 +17,8 @@ export const nodeTypes: Record<string, INodeType> = {
         icon: redisIcon,
         name: "Redis",
         parameters: z.object({
-            password: z.string().nonempty().describe("format:password")
+            password: z.string().nonempty().describe("format:password"),
+            network: z.string().min(1).optional()
         })
     },
     "mongo": {
@@ -26,13 +27,16 @@ export const nodeTypes: Record<string, INodeType> = {
         parameters: z.object({
             database: z.string().nonempty(),
             username: z.string().nonempty(),
-            password: z.string().nonempty().describe("format:password")
+            password: z.string().nonempty().describe("format:password"),
+            network: z.string().min(1).optional()
         })
     },
     "node": {
         icon: nodeIcon,
         name: "NodeJS",
-        parameters: z.object()
+        parameters: z.object({
+            network: z.string().min(1).optional()
+        })
     },
     "docker": {
         icon: dockerIcon,
@@ -42,6 +46,7 @@ export const nodeTypes: Record<string, INodeType> = {
             environment: z.record(z.string(), z.string()).optional(),
             volumes: z.record(z.string(), z.string()).optional(),
             ports: z.array(z.string()).optional(),
+            network: z.string().min(1).optional()
         })
     },
 }

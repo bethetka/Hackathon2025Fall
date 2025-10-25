@@ -9,7 +9,7 @@ export interface INodeInfo {
     x: number;
     y: number;
     type: NodeType;
-    fields: Record<string, object>;
+    fields: Record<string, unknown>;
 }
 
 export interface IWorkspaceInfo {

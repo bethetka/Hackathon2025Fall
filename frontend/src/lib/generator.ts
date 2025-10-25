@@ -9,10 +9,12 @@ export interface IDockerComposeService {
     volumes?: string[];
     ports?: string[];
     depends_on?: string[];
+    networks?: string[];
 }
 
 export interface IDockerCompose {
     services: Record<string, IDockerComposeService>;
+    networks?: Record<string, Record<string, never>>;
 }
 
 const DEFAULT_NODE_IMAGE = "node:20-alpine";
@@ -49,16 +51,17 @@ function makeServiceName(node: INodeInfo): string {
 function mapNodeToService(node: INodeInfo): IDockerComposeService | null {
     const definition = nodeTypes[node.type];
     if (!definition) return null;
+    const fields = node.fields as Record<string, unknown>;
     if (node.type === "redis") {
-        const password = typeof node.fields.password === "string" ? node.fields.password : undefined;
+        const password = typeof fields.password === "string" ? String(fields.password) : undefined;
         const environment = password ? { REDIS_PASSWORD: password } : undefined;
         const command = password ? ["redis-server", "--requirepass", password] : undefined;
         return { image: DEFAULT_REDIS_IMAGE, environment, command };
     }
     if (node.type === "mongo") {
-        const database = typeof node.fields.database === "string" ? node.fields.database : undefined;
-        const username = typeof node.fields.username === "string" ? node.fields.username : undefined;
-        const password = typeof node.fields.password === "string" ? node.fields.password : undefined;
+        const database = typeof fields.database === "string" ? String(fields.database) : undefined;
+        const username = typeof fields.username === "string" ? String(fields.username) : undefined;
+        const password = typeof fields.password === "string" ? String(fields.password) : undefined;
         const environment: Record<string, string> = {};
         if (database) environment.MONGO_INITDB_DATABASE = database;
         if (username) environment.MONGO_INITDB_ROOT_USERNAME = username;
@@ -69,13 +72,32 @@ function mapNodeToService(node: INodeInfo): IDockerComposeService | null {
         return { image: DEFAULT_NODE_IMAGE };
     }
     if (node.type === "docker") {
-        const image = typeof node.fields.image === "string" && (node.fields.image as string).length ? node.fields.image : undefined;
-        const environment = toStringRecord(node.fields.environment);
-        const volumes = buildVolumes(toStringRecord(node.fields.volumes));
-        const ports = toStringArray(node.fields.ports);
+        const image = typeof fields.image === "string" && fields.image.length ? String(fields.image) : undefined;
+        const environment = toStringRecord(fields.environment);
+        const volumes = buildVolumes(toStringRecord(fields.volumes));
+        const ports = toStringArray(fields.ports);
         return { image, environment, volumes, ports };
     }
     return null;
+}
+
+function extractNetworkNames(fields: Record<string, unknown>): string[] {
+    const result = new Set<string>();
+    const single = fields.network;
+    if (typeof single === "string") {
+        const trimmed = single.trim();
+        if (trimmed.length) result.add(trimmed);
+    }
+    const multiple = fields.networks;
+    if (Array.isArray(multiple)) {
+        multiple.forEach(entry => {
+            if (typeof entry === "string") {
+                const trimmed = entry.trim();
+                if (trimmed.length) result.add(trimmed);
+            }
+        });
+    }
+    return Array.from(result);
 }
 
 function serializeScalar(value: unknown): string {
@@ -112,9 +134,15 @@ function serializeYaml(value: unknown, indent = 0): string {
 
 export function generateDockerCompose(nodes: INodeInfo[]): IDockerCompose {
     const services: Record<string, IDockerComposeService> = {};
+    const networkSet = new Set<string>();
     for (const node of nodes) {
         const service = mapNodeToService(node);
         if (!service) continue;
+        const networks = extractNetworkNames(node.fields as Record<string, unknown>);
+        if (networks.length > 0) {
+            service.networks = networks;
+            networks.forEach(name => networkSet.add(name));
+        }
         const name = makeServiceName(node);
         services[name] = Object.fromEntries(Object.entries(service).filter(([_, value]) => {
             if (value === undefined) return false;
@@ -123,7 +151,17 @@ export function generateDockerCompose(nodes: INodeInfo[]): IDockerCompose {
             return true;
         })) as IDockerComposeService;
     }
-    return { services };
+    const compose: IDockerCompose = {
+        services
+    };
+    if (networkSet.size > 0) {
+        const networksRecord: Record<string, Record<string, never>> = {};
+        networkSet.forEach(name => {
+            networksRecord[name] = {};
+        });
+        compose.networks = networksRecord;
+    }
+    return compose;
 }
 
 export function buildDockerComposeYaml(nodes: INodeInfo[]): string {

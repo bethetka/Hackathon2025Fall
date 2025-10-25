@@ -1,5 +1,5 @@
 import { Node, COLLISION_PADDING, NODE_HEIGHT, NODE_WIDTH, type INodeInfo, type IWorkspaceInfo } from "@/components/hackathon/node";
-import React, { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
+import React, { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle, useMemo } from "react";
 import { NodeSettingsDrawer } from "./node-settings-drawer";
 import { NodeSelector } from "./node-selector";
 import { nodeTypes } from "@/lib/nodes";
@@ -53,6 +53,49 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
     const [marqueeStart, setMarqueeStart] = useState<{ x: number; y: number } | null>(null);
     const [nodesWithinMarquee, setNodesWithinMarquee] = useState<Set<number>>(new Set());
 
+    const computeValidation = useCallback((nodesToValidate: INodeInfo[]) => {
+        const errors: Record<number, z.ZodError> = {};
+        const messages: string[] = [];
+
+        for (const node of nodesToValidate) {
+            const nodeType = nodeTypes[node.type];
+            if (!nodeType || !nodeType.parameters) continue;
+
+            try {
+                nodeType.parameters.parse(node.fields);
+            } catch (e) {
+                if (e instanceof z.ZodError) {
+                    errors[node.id] = e;
+                    messages.push(`Node ${node.id}: ${e.issues.map(issue => issue.message).join(", ")}`);
+                }
+            }
+        }
+
+        return { errors, messages };
+    }, []);
+
+    const existingNetworks = useMemo(() => {
+        const values = new Set<string>();
+        nodes.forEach(node => {
+            const fields = node.fields as Record<string, unknown>;
+            const single = fields.network;
+            if (typeof single === "string") {
+                const trimmed = single.trim();
+                if (trimmed.length) values.add(trimmed);
+            }
+            const multiple = fields.networks;
+            if (Array.isArray(multiple)) {
+                multiple.forEach(item => {
+                    if (typeof item === "string") {
+                        const trimmed = item.trim();
+                        if (trimmed.length) values.add(trimmed);
+                    }
+                });
+            }
+        });
+        return Array.from(values).sort((a, b) => a.localeCompare(b));
+    }, [nodes]);
+
     const handleNodeDrag = (id: number, x: number, y: number) => {
         let newX = x;
         let newY = y;
@@ -66,6 +109,12 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
 
         const deltaX = newX - draggedNode.x;
         const deltaY = newY - draggedNode.y;
+        const worldWidth = workspaceInfo.width * BOUND_SCALE;
+        const worldHeight = workspaceInfo.height * BOUND_SCALE;
+        const minX = 0;
+        const minY = 0;
+        const maxX = worldWidth - NODE_WIDTH;
+        const maxY = worldHeight - NODE_HEIGHT;
 
         const nodesToMove = new Set([id, ...(selectedNodeIds.has(id) ? selectedNodeIds : [])]);
         const movingNodes = nodes.filter(node => nodesToMove.has(node.id));
@@ -116,13 +165,30 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
             }
         }
 
+        for (const movingNode of movingNodes) {
+            const targetX = movingNode.x + adjustedDeltaX;
+            if (targetX < minX) {
+                adjustedDeltaX = Math.max(adjustedDeltaX, minX - movingNode.x);
+            }
+            if (targetX > maxX) {
+                adjustedDeltaX = Math.min(adjustedDeltaX, maxX - movingNode.x);
+            }
+            const targetY = movingNode.y + adjustedDeltaY;
+            if (targetY < minY) {
+                adjustedDeltaY = Math.max(adjustedDeltaY, minY - movingNode.y);
+            }
+            if (targetY > maxY) {
+                adjustedDeltaY = Math.min(adjustedDeltaY, maxY - movingNode.y);
+            }
+        }
+
         setNodes((prevNodes) =>
             prevNodes.map((node) => 
                 nodesToMove.has(node.id) 
                     ? { 
                         ...node, 
-                        x: node.x + adjustedDeltaX,
-                        y: node.y + adjustedDeltaY 
+                        x: Math.min(maxX, Math.max(minX, node.x + adjustedDeltaX)),
+                        y: Math.min(maxY, Math.max(minY, node.y + adjustedDeltaY))
                     } 
                     : node
             )
@@ -347,90 +413,102 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
     function handleNewNode(nodeType: string): void {
         const worldCenterX = (workspaceInfo.width / 2 - workspaceInfo.offsetX) / workspaceInfo.zoom;
         const worldCenterY = (workspaceInfo.height / 2 - workspaceInfo.offsetY) / workspaceInfo.zoom;
-        setNodes((s) => [...s, { id: s.length + 1, type: nodeType, x: worldCenterX, y: worldCenterY, fields: {} }])
+        setNodes(prevNodes => {
+            const nextId = prevNodes.reduce((max, node) => Math.max(max, node.id), 0) + 1;
+            const updatedNodes = [...prevNodes, { id: nextId, type: nodeType, x: worldCenterX, y: worldCenterY, fields: {} as Record<string, unknown> }];
+            const { errors } = computeValidation(updatedNodes);
+            setNodeValidationErrors(errors);
+            return updatedNodes;
+        });
     }
 
-    function handleSetFields(fields: Record<string, object>): void {
-        setNodes(prevNodes =>
-            prevNodes.map(node =>
-                node.id === selectedNode!.id ? { ...node, fields } : node
-            )
-        );
+    function handleSetFields(fields: Record<string, unknown>): void {
+        const selectedId = selectedNode?.id;
+        if (selectedId === undefined) return;
+        setNodes(prevNodes => {
+            const updatedNodes = prevNodes.map(node =>
+                node.id === selectedId ? { ...node, fields } : node
+            );
+            const { errors } = computeValidation(updatedNodes);
+            setNodeValidationErrors(errors);
+            const updatedSelected = updatedNodes.find(node => node.id === selectedId) || null;
+            setSelectedNode(updatedSelected);
+            return updatedNodes;
+        });
     }
 
-    const serialize = () => {
-        const errors: Record<number, z.ZodError> = {};
-        let hasErrors = false;
-
-        for (const node of nodes) {
-            const nodeType = nodeTypes[node.type];
-            if (!nodeType || !nodeType.parameters) continue;
-
-            try {
-                nodeType.parameters.parse(node.fields);
-            } catch (e) {
-                if (e instanceof z.ZodError) {
-                    errors[node.id] = e;
-                    hasErrors = true;
-                }
-            }
-        }
-
+    const serialize = useCallback(() => {
+        const { errors, messages } = computeValidation(nodes);
         setNodeValidationErrors(errors);
-
-        if (hasErrors) {
-            const errorMessages = Object.entries(errors).map(([id, err]) => {
-                return `Node ${id}: ${err.issues.map(e => e.message).join(', ')}`;
-            });
-            throw new Error(`Validation errors:\n${errorMessages.join('\n')}`);
+        if (messages.length > 0) {
+            throw new Error(`Validation errors:\n${messages.join('\n')}`);
         }
+        return nodes.map(node => ({ ...node, fields: { ...node.fields } }));
+    }, [nodes, computeValidation]);
 
-        return [...nodes];
-    };
+    const deserialize = useCallback((data: INodeInfo[]) => {
+        const structureErrors: string[] = [];
+        const sanitized: INodeInfo[] = [];
 
-    const deserialize = (data: INodeInfo[]) => {
-        const errors: string[] = [];
-        for (const node of data) {
-            if (typeof node.id !== 'number' || typeof node.type !== 'string' || !node.fields) {
-                errors.push(`Invalid node structure: ${JSON.stringify(node)}`);
-                continue;
+        data.forEach(node => {
+            if (typeof node !== "object" || node === null) {
+                structureErrors.push("Invalid node entry");
+                return;
             }
 
-            const nodeType = nodeTypes[node.type];
-            if (!nodeType) {
-                errors.push(`Unknown node type: ${node.type}`);
-                continue;
+            if (typeof node.id !== "number" || typeof node.type !== "string" || typeof node.x !== "number" || typeof node.y !== "number") {
+                structureErrors.push(`Invalid node structure: ${JSON.stringify(node)}`);
+                return;
             }
 
-            try {
-                nodeType.parameters.parse(node.fields);
-            } catch (e) {
-                if (e instanceof z.ZodError) {
-                    errors.push(`Node ${node.id}: ${e.issues.map(err => err.message).join(', ')}`);
-                }
+            if (!nodeTypes[node.type]) {
+                structureErrors.push(`Unknown node type: ${node.type}`);
+                return;
             }
+
+            const fields = node.fields && typeof node.fields === "object" ? node.fields : {};
+            sanitized.push({ ...node, fields: { ...fields } });
+        });
+
+        if (structureErrors.length > 0) {
+            throw new Error(structureErrors.join("\n"));
         }
 
-        if (errors.length > 0) {
-            throw new Error(errors.join('\n'));
+        const { errors, messages } = computeValidation(sanitized);
+        if (messages.length > 0) {
+            setNodeValidationErrors(errors);
+            throw new Error(messages.join("\n"));
         }
 
-        setNodes(data);
-        setNodeValidationErrors({});
-    };
+        setNodes(sanitized);
+        setNodeValidationErrors(errors);
+        setSelectedNode(null);
+        setSelectedNodeIds(new Set());
+    }, [computeValidation]);
 
     useImperativeHandle(ref, () => ({
         serialize,
         deserialize
-    }), [nodes, setNodes]);
+    }), [serialize, deserialize]);
 
     function handleDeleteNode(id: number): void {
-        setNodes((ns) => ns.filter(i => i.id !== id))
+        setNodes(prevNodes => {
+            const updatedNodes = prevNodes.filter(node => node.id !== id);
+            const { errors } = computeValidation(updatedNodes);
+            setNodeValidationErrors(errors);
+            return updatedNodes;
+        });
+        setSelectedNode(null);
+        setSelectedNodeIds(prev => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+        });
     }
 
     return (
         <>
-            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields} deleteNode={handleDeleteNode}/>
+            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields} deleteNode={handleDeleteNode} existingNetworks={existingNetworks}/>
             <NodeSelector open={nodeSelectorOpen} setOpen={setNodeSelectorOpen} onSelected={handleNewNode} />
             <div
                 style={{
