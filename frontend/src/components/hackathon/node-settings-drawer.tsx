@@ -106,7 +106,7 @@ export const NodeSettingsDrawer: React.FC<INodeSettingsDrawerProps> = (props: IN
             <DrawerHeader>
                 <DrawerTitle>Editing {nodeType!.name}</DrawerTitle>
             </DrawerHeader>
-            <div className="flex flex-col gap-4 p-4">
+            <div className="flex flex-col gap-4 p-4 overflow-y-auto">
                 <h1 className="text-lg">Parameters</h1>
                 {Object.entries(params.properties || {}).map(([propName, schema]) => {
                     const error = validationError?.issues.find(e => e.path[0] === propName);
