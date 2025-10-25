@@ -450,8 +450,6 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
                             isMarqueeSelecting={isMarqueeSelecting}
                         />
                     ))}
-                    
-                    {/* Marquee selection rectangle */}
                     {marqueeRect && (
                         <div
                             className="absolute border-2 border-blue-500 pointer-events-none"
