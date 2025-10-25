@@ -7,10 +7,12 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Check, Container, Copy, Download, FileJson, Keyboard, Plus, RefreshCw, Upload, X, ZoomIn, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildDockerComposeYaml } from "@/lib/generator";
+import { parseDockerCompose } from "@/lib/composeParser";
 
 export const MainPage: React.FC = () => {
     const nodeEditorRef = useRef<NodeEditorHandle>(null);
     const importFileInputRef = useRef<HTMLInputElement>(null);
+    const composeFileInputRef = useRef<HTMLInputElement>(null);
 
     const [isSerializeDialogOpen, setIsSerializeDialogOpen] = useState(false);
     const [serializeContent, setSerializeContent] = useState("");
@@ -147,10 +149,31 @@ export const MainPage: React.FC = () => {
     };
 
     const handleImportDockerCompose = () => {
-        setDockerContent("");
-        setDockerCopySuccess(false);
-        setDockerError("Importing from Docker Compose is not available yet.");
-        setIsDockerDialogOpen(true);
+        composeFileInputRef.current?.click();
+    };
+
+    const handleComposeFileImport = async (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const nodes = parseDockerCompose(text);
+            nodeEditorRef.current?.deserialize(nodes);
+            const sanitized = nodeEditorRef.current?.serialize();
+            const generated = sanitized ? buildDockerComposeYaml(sanitized) : text;
+            setDockerContent(generated);
+            setDockerError(null);
+            setDockerCopySuccess(false);
+            setIsDockerDialogOpen(true);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            setDockerContent("");
+            setDockerCopySuccess(false);
+            setDockerError(`Could not import Docker Compose: ${message}`);
+            setIsDockerDialogOpen(true);
+        } finally {
+            event.target.value = "";
+        }
     };
 
     const handleOpenNodePalette = () => {
@@ -196,6 +219,13 @@ export const MainPage: React.FC = () => {
                 accept="application/json"
                 className="hidden"
                 onChange={handleImportFromFile}
+            />
+            <input
+                ref={composeFileInputRef}
+                type="file"
+                accept=".yml,.yaml,application/x-yaml,text/yaml"
+                className="hidden"
+                onChange={handleComposeFileImport}
             />
 
             <div className="pointer-events-none absolute inset-0">

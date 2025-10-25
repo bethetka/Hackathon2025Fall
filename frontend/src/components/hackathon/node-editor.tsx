@@ -4,6 +4,9 @@ import { NodeSettingsDrawer } from "./node-settings-drawer";
 import { NodeSelector } from "./node-selector";
 import { nodeTypes } from "@/lib/nodes";
 import * as z from "zod";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Trash2 } from "lucide-react";
 
 function snapToGrid(x: number, y: number, gridSize = 1, gridSizeY = gridSize) {
     const snap = (value: number, size: number) =>
@@ -58,6 +61,8 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
     const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
     const [marqueeStart, setMarqueeStart] = useState<{ x: number; y: number } | null>(null);
     const [nodesWithinMarquee, setNodesWithinMarquee] = useState<Set<number>>(new Set());
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [pendingDeleteIds, setPendingDeleteIds] = useState<number[]>([]);
 
     const clampOffset = useCallback((width: number, height: number, zoom: number, offsetX: number, offsetY: number) => {
         const worldWidth = width * BOUND_SCALE;
@@ -445,7 +450,9 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
                 }
                 return newSelection;
             });
+            return;
         } else {
+            setSelectedNodeIds(new Set([id]));
             setSelectedNode(nodes.find(i => i.id == id) || null);
             setNodeInfoDrawerOpen(true);
         }
@@ -554,19 +561,27 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
         resetView
     }), [serialize, deserialize, openNodePalette, zoomIn, zoomOut, resetView]);
 
-    function handleDeleteNode(id: number): void {
+    const deleteNodes = useCallback((ids: number[]) => {
+        if (ids.length === 0) return;
+        const idSet = new Set(ids);
         setNodes(prevNodes => {
-            const updatedNodes = prevNodes.filter(node => node.id !== id);
-            const { errors } = computeValidation(updatedNodes);
+            const remaining = prevNodes.filter(node => !idSet.has(node.id));
+            const { errors } = computeValidation(remaining);
             setNodeValidationErrors(errors);
-            return updatedNodes;
+            return remaining;
         });
-        setSelectedNode(null);
+        setSelectedNode(prev => (prev && idSet.has(prev.id) ? null : prev));
         setSelectedNodeIds(prev => {
             const next = new Set(prev);
-            next.delete(id);
+            ids.forEach(id => next.delete(id));
             return next;
         });
+        setNodesWithinMarquee(new Set());
+        setNodeInfoDrawerOpen(false);
+    }, [computeValidation]);
+
+    function handleDeleteNode(id: number): void {
+        deleteNodes([id]);
     }
 
     useEffect(() => {
@@ -619,6 +634,50 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
         observer.observe(element);
         return () => observer.disconnect();
     }, []);
+
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== "Delete" && event.key !== "Backspace") return;
+            const target = event.target as HTMLElement | null;
+            if (target) {
+                const tagName = target.tagName;
+                if (tagName === "INPUT" || tagName === "TEXTAREA" || target.isContentEditable) {
+                    return;
+                }
+            }
+            const ids = selectedNodeIds.size > 0
+                ? Array.from(selectedNodeIds)
+                : selectedNode
+                    ? [selectedNode.id]
+                    : [];
+            if (ids.length === 0) return;
+            event.preventDefault();
+            setPendingDeleteIds(ids);
+            setIsDeleteDialogOpen(true);
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [selectedNodeIds, selectedNode]);
+
+    const handleConfirmDelete = useCallback(() => {
+        deleteNodes(pendingDeleteIds);
+        setPendingDeleteIds([]);
+        setIsDeleteDialogOpen(false);
+    }, [deleteNodes, pendingDeleteIds]);
+
+    const handleRequestDelete = useCallback(() => {
+        const ids = selectedNodeIds.size > 0
+            ? Array.from(selectedNodeIds)
+            : selectedNode
+                ? [selectedNode.id]
+                : [];
+        if (ids.length === 0) return;
+        setPendingDeleteIds(ids);
+        setIsDeleteDialogOpen(true);
+    }, [selectedNodeIds, selectedNode]);
+
+    const selectedCount = selectedNodeIds.size;
 
     return (
         <>
@@ -673,7 +732,56 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
                         />
                     )}
                 </div>
+                {selectedCount > 0 && (
+                    <div className="pointer-events-none absolute bottom-6 left-1/2 z-20 -translate-x-1/2">
+                        <div className="pointer-events-auto flex items-center gap-3 rounded-full border bg-background/90 px-4 py-2 shadow-lg backdrop-blur">
+                            <span className="text-sm font-medium text-foreground">
+                                Selected {selectedCount} {selectedCount === 1 ? "item" : "items"}
+                            </span>
+                            <Button
+                                size="icon"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={handleRequestDelete}
+                            >
+                                <Trash2 className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </div>
+            <Dialog open={isDeleteDialogOpen} onOpenChange={(open) => {
+                setIsDeleteDialogOpen(open);
+                if (!open) {
+                    setPendingDeleteIds([]);
+                }
+            }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete {pendingDeleteIds.length} {pendingDeleteIds.length === 1 ? "node" : "nodes"}?</DialogTitle>
+                        <DialogDescription>
+                            This action cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button
+                            variant="destructive"
+                            onClick={handleConfirmDelete}
+                        >
+                            Delete
+                        </Button>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setPendingDeleteIds([]);
+                                setIsDeleteDialogOpen(false);
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
     );
 });

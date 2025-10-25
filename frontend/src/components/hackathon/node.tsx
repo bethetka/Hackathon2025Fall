@@ -32,8 +32,8 @@ export interface INodeProps {
     isMarqueeSelecting?: boolean;
 }
 
-export const NODE_WIDTH = 300;
-export const NODE_HEIGHT = 150;
+export const NODE_WIDTH = 320;
+export const NODE_HEIGHT = 160;
 export const COLLISION_PADDING = 8;
 
 export const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag, onNodeClicked, interactable, hasError, isSelected = false, isWithinMarquee = false, isMarqueeSelecting = false }) => {
@@ -88,41 +88,45 @@ export const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag, on
 
     return (
         <div
-            className={`absolute cursor-pointer pl-4 pr-4 pt-4 pb-4 select-none bg-white border-2 border-solid rounded-[12px] font-medium ${hasError
-                    ? "border-red-500"
-                    : isSelected
-                        ? "border-blue-500 bg-blue-50"
-                        : isWithinMarquee
-                            ? "border-blue-500"
-                            : `border-transparent ${!isMarqueeSelecting ? "hover:border-black" : ""}`
-                }`}
+            className="absolute cursor-pointer select-none"
             style={{
                 top: info.y,
                 left: info.x,
                 width: `${NODE_WIDTH}px`,
                 height: `${NODE_HEIGHT}px`,
             }}
-            onMouseDown={interactable ? handleMouseDown : undefined}
-            onClick={(e) => {
-                if (!hasMovedRef.current && interactable) {
-                    onNodeClicked(info.id, e);
-                }
-            }}
         >
-            <div className="flex flex-row gap-2 items-center">
-                <img width={32} src={nodeType.icon} alt={`${nodeType.name} icon`} className="pointer-events-none" />
-                <p className="truncate">{nodeType.name}</p>
-            </div>
-
-            {hasError && (
-                <div className="absolute top-2 right-2 text-red-500">
-                    <AlertCircle className="h-4 w-4" />
+            <div
+                className={`relative flex h-full w-full flex-col rounded-[12px] border-2 border-solid bg-white font-medium transition-shadow ${hasError
+                        ? "border-red-500"
+                        : isWithinMarquee
+                            ? "border-blue-500"
+                            : `border-transparent ${!isMarqueeSelecting ? "hover:border-black" : ""}`
+                    } ${isSelected ? "ring-2 ring-blue-500 ring-offset-white" : ""}`}
+                onMouseDown={interactable ? handleMouseDown : undefined}
+                onClick={(e) => {
+                    if (!hasMovedRef.current && interactable) {
+                        onNodeClicked(info.id, e);
+                    }
+                }}
+            >
+                <div className="flex flex-row items-center gap-2 px-4 pt-4 pb-2">
+                    <img width={32} src={nodeType.icon} alt={`${nodeType.name} icon`} className="pointer-events-none" />
+                    <p className="truncate">{nodeType.name}</p>
                 </div>
-            )}
 
-            {interactable && <div className="absolute top-1/2 right-4 -translate-y-1/2">
-                <ChevronRight />
-            </div>}
+                {hasError && (
+                    <div className="absolute top-2 right-2 text-red-500">
+                        <AlertCircle className="h-5 w-5" />
+                    </div>
+                )}
+
+                {interactable && (
+                    <div className="absolute top-1/2 right-4 -translate-y-1/2">
+                        <ChevronRight />
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

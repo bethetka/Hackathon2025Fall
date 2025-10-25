@@ -1,5 +1,5 @@
 import yaml from 'js-yaml';
-import type { INodeInfo } from '@/components/hackathon/node';
+import { NODE_HEIGHT, NODE_WIDTH, type INodeInfo } from '@/components/hackathon/node';
 import { nodeTypes } from './nodes';
 
 const DEFAULT_NODE_IMAGE = "node:20-alpine";
@@ -152,8 +152,6 @@ export function parseDockerCompose(yamlText: string): INodeInfo[] {
     nodes.push({ id: nextId++, type: nodeType, x: 0, y: 0, fields });
   }
 
-  const NODE_WIDTH = 300;
-  const NODE_HEIGHT = 150;
   const SPACING_X = 80;
   const SPACING_Y = 40;
 
