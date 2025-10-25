@@ -1,5 +1,5 @@
 import { nodeTypes } from "@/lib/nodes";
-import { ChevronRight } from "lucide-react";
+import { AlertCircle, ChevronRight } from "lucide-react";
 import React, { useState, useCallback, useEffect, useRef } from "react";
 
 export type NodeType = string;
@@ -26,13 +26,14 @@ export interface INodeProps {
     onNodeDrag: (id: number, x: number, y: number) => void;
     onNodeClicked: (id: number) => void;
     interactable: boolean;
+    hasError?: boolean;
 }
 
 export const NODE_WIDTH = 300;
 export const NODE_HEIGHT = 150;
 export const COLLISION_PADDING = 8;
 
-export const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag, onNodeClicked, interactable }) => {
+export const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag, onNodeClicked, interactable, hasError }) => {
     const [isDragging, setIsDragging] = useState(false);
     const [initialMousePos, setInitialMousePos] = useState({ x: 0, y: 0 });
     const [initialNodePos, setInitialNodePos] = useState({ x: 0, y: 0 });
@@ -86,7 +87,9 @@ export const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag, on
 
     return (
         <div
-            className="absolute cursor-pointer pl-4 pr-4 pt-4 pb-4 select-none bg-white border-2 border-solid rounded-[12px] border-transparent font-medium hover:border-black"
+            className={`absolute cursor-pointer pl-4 pr-4 pt-4 pb-4 select-none bg-white border-2 border-solid rounded-[12px] font-medium ${
+                hasError ? "border-red-500" : "border-transparent hover:border-black"
+            }`}
             style={{
                 top: info.y,
                 left: info.x,
@@ -104,6 +107,12 @@ export const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag, on
                 <img width={32} src={nodeType.icon} className="pointer-events-none" />
                 <p className="truncate">{nodeType.name}</p>
             </div>
+
+            {hasError && (
+                <div className="absolute top-2 right-2 text-red-500">
+                    <AlertCircle className="h-4 w-4" />
+                </div>
+            )}
 
             {interactable && <div className="absolute top-1/2 right-4 -translate-y-1/2">
                 <ChevronRight />

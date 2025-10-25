@@ -1,7 +1,9 @@
 import { Node, COLLISION_PADDING, NODE_HEIGHT, NODE_WIDTH, type INodeInfo, type IWorkspaceInfo } from "@/components/hackathon/node";
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
 import { NodeSettingsDrawer } from "./node-settings-drawer";
 import { NodeSelector } from "./node-selector";
+import { nodeTypes } from "@/lib/nodes";
+import * as z from "zod";
 
 function snapToGrid(x: number, y: number, gridSize = 1, gridSizeY = gridSize) {
     const snap = (value: number, size: number) =>
@@ -13,7 +15,12 @@ function snapToGrid(x: number, y: number, gridSize = 1, gridSizeY = gridSize) {
     };
 }
 
-const NodeEditor: React.FC = () => {
+export interface NodeEditorHandle {
+    serialize: () => void;
+    deserialize: () => void;
+}
+
+const NodeEditor = forwardRef<NodeEditorHandle>((props, ref) => {
     const BOUND_SCALE = 3;
     const MIN_ZOOM = 0.5;
     const MAX_ZOOM = 4;
@@ -38,6 +45,7 @@ const NodeEditor: React.FC = () => {
     const [nodeInfoDrawerOpen, setNodeInfoDrawerOpen] = useState(false);
     const [selectedNode, setSelectedNode] = useState<INodeInfo | null>(null);
     const [nodeSelectorOpen, setNodeSelectorOpen] = useState(false);
+    const [nodeValidationErrors, setNodeValidationErrors] = useState<Record<number, z.ZodError>>({});
 
     const handleNodeDrag = (id: number, x: number, y: number) => {
         let newX = x;
@@ -207,39 +215,128 @@ const NodeEditor: React.FC = () => {
         );
     }
 
+    const serialize = () => {
+        const errors: Record<number, z.ZodError> = {};
+        let hasErrors = false;
+
+        for (const node of nodes) {
+            const nodeType = nodeTypes[node.type];
+            if (!nodeType || !nodeType.parameters) continue;
+
+            try {
+                nodeType.parameters.parse(node.fields);
+            } catch (e) {
+                if (e instanceof z.ZodError) {
+                    errors[node.id] = e;
+                    hasErrors = true;
+                }
+            }
+        }
+
+        setNodeValidationErrors(errors);
+
+        if (hasErrors) {
+            const errorMessages = Object.entries(errors).map(([id, err]) => {
+                return `Node ${id}: ${err.issues.map(e => e.message).join(', ')}`;
+            });
+            alert(`Validation errors:\n${errorMessages.join('\n')}`);
+        } else {
+            alert(JSON.stringify(nodes, null, 2));
+        }
+    };
+
+    const deserialize = () => {
+        const json = prompt("Enter serialized JSON");
+        if (!json) return;
+
+        try {
+            const data = JSON.parse(json);
+            if (!Array.isArray(data)) {
+                throw new Error("Expected an array of nodes");
+            }
+
+            const errors: string[] = [];
+            for (const node of data) {
+                if (typeof node.id !== 'number' || typeof node.type !== 'string' || !node.fields) {
+                    errors.push(`Invalid node structure: ${JSON.stringify(node)}`);
+                    continue;
+                }
+
+                const nodeType = nodeTypes[node.type];
+                if (!nodeType) {
+                    errors.push(`Unknown node type: ${node.type}`);
+                    continue;
+                }
+
+                try {
+                    nodeType.parameters.parse(node.fields);
+                } catch (e) {
+                    if (e instanceof z.ZodError) {
+                        errors.push(`Node ${node.id}: ${e.issues.map(err => err.message).join(', ')}`);
+                    }
+                }
+            }
+
+            if (errors.length > 0) {
+                throw new Error(errors.join('\n'));
+            }
+
+            setNodes(data);
+            setNodeValidationErrors({});
+        } catch (e) {
+            alert(`Error: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    };
+
+    useImperativeHandle(ref, () => ({
+        serialize,
+        deserialize
+    }), [nodes]);
+
     return (
-        <div
-            style={{
-                width: `${workspaceInfo.width}px`,
-                height: `${workspaceInfo.height}px`,
-                position: 'relative',
-                overflow: 'hidden',
-                borderRadius: `12px`
-            }}
-            ref={self}
-        >
+        <>
             <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields} />
             <NodeSelector open={nodeSelectorOpen} setOpen={setNodeSelectorOpen} onSelected={handleNewNode} />
             <div
                 style={{
-                    width: `${workspaceInfo.width * BOUND_SCALE}px`,
-                    height: `${workspaceInfo.height * BOUND_SCALE}px`,
+                    width: `${workspaceInfo.width}px`,
+                    height: `${workspaceInfo.height}px`,
                     position: 'relative',
-                    transformOrigin: '0 0',
-                    transform: `translate(${workspaceInfo.offsetX}px, ${workspaceInfo.offsetY}px) scale(${workspaceInfo.zoom})`,
-                    cursor: isPanning ? 'grabbing' : 'grab',
-                    background: "#f1f1f1",
-                    backgroundImage: "radial-gradient(black 2px, transparent 0)",
-                    backgroundSize: "40px 40px",
+                    overflow: 'hidden',
+                    borderRadius: `12px`
                 }}
-                onMouseDown={handleMouseDown}
+                ref={self}
             >
-                {nodes.map((i) => (
-                    <Node interactable={true} info={i} key={i.id} workspaceInfo={workspaceInfo} onNodeDrag={handleNodeDrag} onNodeClicked={handleNodeClicked} />
-                ))}
+
+                <div
+                    style={{
+                        width: `${workspaceInfo.width * BOUND_SCALE}px`,
+                        height: `${workspaceInfo.height * BOUND_SCALE}px`,
+                        position: 'relative',
+                        transformOrigin: '0 0',
+                        transform: `translate(${workspaceInfo.offsetX}px, ${workspaceInfo.offsetY}px) scale(${workspaceInfo.zoom})`,
+                        cursor: isPanning ? 'grabbing' : 'grab',
+                        background: "#f1f1f1",
+                        backgroundImage: "radial-gradient(black 2px, transparent 0)",
+                        backgroundSize: "40px 40px",
+                    }}
+                    onMouseDown={handleMouseDown}
+                >
+                    {nodes.map((i) => (
+                        <Node 
+                            interactable={true} 
+                            info={i} 
+                            key={i.id} 
+                            workspaceInfo={workspaceInfo} 
+                            onNodeDrag={handleNodeDrag} 
+                            onNodeClicked={handleNodeClicked}
+                            hasError={nodeValidationErrors[i.id] !== undefined}
+                        />
+                    ))}
+                </div>
             </div>
-        </div>
+        </>
     );
-};
+});
 
 export default NodeEditor;
