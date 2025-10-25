@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Check, Container, Copy, Download, FileJson, Keyboard, Upload, X } from "lucide-react";
+import { Check, Container, Copy, Download, FileJson, Keyboard, Plus, RefreshCw, Upload, X, ZoomIn, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildDockerComposeYaml } from "@/lib/generator";
 
@@ -123,6 +123,52 @@ export const MainPage: React.FC = () => {
         });
     };
 
+    const handleExportDockerCompose = () => {
+        try {
+            const nodes = nodeEditorRef.current?.serialize();
+            if (!nodes) return;
+            const yaml = buildDockerComposeYaml(nodes);
+            const blob = new Blob([yaml], { type: "text/yaml" });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = `stackpilot-docker-compose-${new Date().toISOString().replace(/[:.]/g, "-")}.yml`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            setDockerContent("");
+            setDockerError(message);
+            setDockerCopySuccess(false);
+            setIsDockerDialogOpen(true);
+        }
+    };
+
+    const handleImportDockerCompose = () => {
+        setDockerContent("");
+        setDockerCopySuccess(false);
+        setDockerError("Importing from Docker Compose is not available yet.");
+        setIsDockerDialogOpen(true);
+    };
+
+    const handleOpenNodePalette = () => {
+        nodeEditorRef.current?.openNodePalette();
+    };
+
+    const handleZoomIn = () => {
+        nodeEditorRef.current?.zoomIn();
+    };
+
+    const handleZoomOut = () => {
+        nodeEditorRef.current?.zoomOut();
+    };
+
+    const handleResetView = () => {
+        nodeEditorRef.current?.resetView();
+    };
+
     const handleDeserialize = () => {
         setIsDeserializeDialogOpen(true);
         setDeserializeContent("");
@@ -139,75 +185,127 @@ export const MainPage: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-background flex flex-col">
-            <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10">
-                <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="space-y-2">
-                        <h1 className="text-3xl font-semibold tracking-tight">StackPilot Canvas</h1>
-                        <p className="text-sm text-muted-foreground">
-                            Sketch the architecture, focus on the editor, and keep sharing effortless.
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-3 rounded-lg border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-                        <Keyboard className="h-5 w-5 text-foreground" />
+        <div className="relative flex h-screen w-full overflow-hidden bg-background text-foreground">
+            <div className="h-full w-full">
+                <NodeEditor ref={nodeEditorRef} />
+            </div>
+
+            <input
+                ref={importFileInputRef}
+                type="file"
+                accept="application/json"
+                className="hidden"
+                onChange={handleImportFromFile}
+            />
+
+            <div className="pointer-events-none absolute inset-0">
+                <div className="pointer-events-auto absolute left-6 top-6 flex flex-col gap-4">
+                    <div className="w-64 rounded-2xl border bg-background/90 p-4 shadow-lg backdrop-blur">
                         <div className="space-y-1">
-                            <div className="font-medium text-foreground">Hotkeys</div>
-                            <div className="flex flex-wrap items-center gap-1">
-                                <kbd className="rounded border bg-background px-2 py-1 text-[10px] font-medium uppercase tracking-wide">Shift</kbd>
-                                <span className="text-[10px] font-semibold text-muted-foreground">+</span>
-                                <kbd className="rounded border bg-background px-2 py-1 text-[10px] font-medium uppercase tracking-wide">A</kbd>
-                                <span className="text-xs text-muted-foreground">Add new node</span>
+                            <p className="text-sm font-semibold">StackPilot</p>
+                            <p className="text-xs text-muted-foreground">Build and share your service topology.</p>
+                        </div>
+
+                        <div className="mt-4 flex flex-col gap-4">
+                            <div className="flex flex-col gap-2">
+                                <Button className="justify-start gap-2" onClick={handleOpenNodePalette}>
+                                    <Plus className="h-4 w-4" />
+                                    Add Node
+                                </Button>
+                                <div className="flex gap-2">
+                                    <Button
+                                        size="icon"
+                                        variant="outline"
+                                        onClick={handleZoomIn}
+                                        title="Zoom in"
+                                    >
+                                        <ZoomIn className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                        size="icon"
+                                        variant="outline"
+                                        onClick={handleZoomOut}
+                                        title="Zoom out"
+                                    >
+                                        <ZoomOut className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                        size="icon"
+                                        variant="outline"
+                                        onClick={handleResetView}
+                                        title="Reset view"
+                                    >
+                                        <RefreshCw className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2 border-t border-border/60 pt-3">
+                                <div className="text-xs font-semibold uppercase text-muted-foreground">JSON</div>
+                                <Button variant="outline" className="justify-start gap-2" onClick={handleExportJson}>
+                                    <Download className="h-4 w-4" />
+                                    Export JSON
+                                </Button>
+                                <Button variant="outline" className="justify-start gap-2" onClick={handleImportButtonClick}>
+                                    <Upload className="h-4 w-4" />
+                                    Import JSON
+                                </Button>
+                                <Button variant="ghost" className="justify-start gap-2 px-2 text-xs font-medium" onClick={handleSerialize}>
+                                    <FileJson className="h-4 w-4" />
+                                    View JSON
+                                </Button>
+                                <Button variant="ghost" className="justify-start gap-2 px-2 text-xs font-medium" onClick={handleDeserialize}>
+                                    <FileJson className="h-4 w-4" />
+                                    Paste JSON
+                                </Button>
+                            </div>
+
+                            <div className="space-y-2 border-t border-border/60 pt-3">
+                                <div className="text-xs font-semibold uppercase text-muted-foreground">Docker Compose</div>
+                                <Button variant="outline" className="justify-start gap-2" onClick={handleDockerCompose}>
+                                    <Container className="h-4 w-4" />
+                                    View Compose
+                                </Button>
+                                <Button variant="outline" className="justify-start gap-2" onClick={handleExportDockerCompose}>
+                                    <Download className="h-4 w-4" />
+                                    Export Compose
+                                </Button>
+                                <Button variant="outline" className="justify-start gap-2" onClick={handleImportDockerCompose}>
+                                    <Upload className="h-4 w-4" />
+                                    Import Compose
+                                </Button>
                             </div>
                         </div>
                     </div>
-                </header>
-
-                <div className="flex flex-col gap-3 rounded-xl border bg-muted/20 p-4 shadow-sm">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <Button onClick={handleExportJson} className="gap-2">
-                            <Download className="h-4 w-4" />
-                            Export JSON
-                        </Button>
-                        <Button variant="outline" onClick={handleImportButtonClick} className="gap-2">
-                            <Upload className="h-4 w-4" />
-                            Import JSON
-                        </Button>
-                        <Button variant="outline" onClick={handleSerialize} className="gap-2">
-                            <FileJson className="h-4 w-4" />
-                            View JSON
-                        </Button>
-                        <Button variant="outline" onClick={handleDockerCompose} className="gap-2">
-                            <Container className="h-4 w-4" />
-                            View Docker Compose
-                        </Button>
-                        <input
-                            ref={importFileInputRef}
-                            type="file"
-                            accept="application/json"
-                            className="hidden"
-                            onChange={handleImportFromFile}
-                        />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-                        <span>Importing from a file applies immediately.</span>
-                        <span>Use View JSON to copy or audit the current layout,</span>
-                        <Button
-                            variant="link"
-                            size="sm"
-                            className="h-auto px-0 text-xs"
-                            onClick={handleDeserialize}
-                        >
-                            or paste JSON manually.
-                        </Button>
-                    </div>
                 </div>
 
-                <section className="flex min-h-[480px] flex-1 flex-col overflow-hidden rounded-xl border bg-muted/20">
-                    <div className="flex-1 overflow-hidden p-4">
-                        <NodeEditor ref={nodeEditorRef} />
+                <div className="pointer-events-auto absolute bottom-6 left-6">
+                    <div className="w-[240px] rounded-xl border bg-background/90 px-4 py-3 shadow-lg backdrop-blur">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                            <Keyboard className="h-4 w-4" />
+                            Hotkeys
+                        </div>
+                        <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1">
+                                    <kbd className="rounded border bg-background px-2 py-1 text-[10px] font-semibold uppercase tracking-wide">Shift</kbd>
+                                    <span className="text-[10px] font-semibold text-muted-foreground">+</span>
+                                    <kbd className="rounded border bg-background px-2 py-1 text-[10px] font-semibold uppercase tracking-wide">A</kbd>
+                                </div>
+                                <span>Add Node</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="rounded border bg-background px-2 py-1 text-[10px] font-semibold uppercase tracking-wide">Wheel</span>
+                                <span>Zoom canvas</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="rounded border bg-background px-2 py-1 text-[10px] font-semibold uppercase tracking-wide">Drag</span>
+                                <span>Pan canvas</span>
+                            </div>
+                        </div>
                     </div>
-                </section>
-            </main>
+                </div>
+            </div>
 
             <Dialog open={isSerializeDialogOpen} onOpenChange={setIsSerializeDialogOpen}>
                 <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
@@ -317,7 +415,7 @@ export const MainPage: React.FC = () => {
                     <DialogHeader>
                         <DialogTitle>Docker Compose</DialogTitle>
                         <DialogDescription>
-                            Generated docker-compose.yml from your current nodes.
+                            {dockerError ? "Docker Compose tools" : "Generated docker-compose.yml from your current nodes."}
                         </DialogDescription>
                     </DialogHeader>
 

@@ -18,6 +18,10 @@ function snapToGrid(x: number, y: number, gridSize = 1, gridSizeY = gridSize) {
 export interface NodeEditorHandle {
     serialize: () => INodeInfo[];
     deserialize: (nodes: INodeInfo[]) => void;
+    openNodePalette: () => void;
+    zoomIn: () => void;
+    zoomOut: () => void;
+    resetView: () => void;
 }
 
 const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
@@ -54,6 +58,62 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
     const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
     const [marqueeStart, setMarqueeStart] = useState<{ x: number; y: number } | null>(null);
     const [nodesWithinMarquee, setNodesWithinMarquee] = useState<Set<number>>(new Set());
+
+    const clampOffset = useCallback((width: number, height: number, zoom: number, offsetX: number, offsetY: number) => {
+        const worldWidth = width * BOUND_SCALE;
+        const worldHeight = height * BOUND_SCALE;
+        const minOffsetX = width - worldWidth * zoom;
+        const minOffsetY = height - worldHeight * zoom;
+        const clampedOffsetX = Math.max(minOffsetX, Math.min(0, offsetX));
+        const clampedOffsetY = Math.max(minOffsetY, Math.min(0, offsetY));
+        return { offsetX: clampedOffsetX, offsetY: clampedOffsetY };
+    }, []);
+
+    const zoomBy = useCallback((delta: number) => {
+        setWorkspaceInfo(prev => {
+            const oldZoom = prev.zoom;
+            const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldZoom + delta));
+            if (newZoom === oldZoom) {
+                return prev;
+            }
+
+            const centerX = prev.width / 2;
+            const centerY = prev.height / 2;
+            const worldX = (centerX - prev.offsetX) / oldZoom;
+            const worldY = (centerY - prev.offsetY) / oldZoom;
+
+            const nextOffsetX = centerX - worldX * newZoom;
+            const nextOffsetY = centerY - worldY * newZoom;
+            const clamped = clampOffset(prev.width, prev.height, newZoom, nextOffsetX, nextOffsetY);
+
+            return {
+                ...prev,
+                zoom: newZoom,
+                offsetX: clamped.offsetX,
+                offsetY: clamped.offsetY,
+            };
+        });
+    }, [clampOffset]);
+
+    const zoomIn = useCallback(() => zoomBy(0.2), [zoomBy]);
+    const zoomOut = useCallback(() => zoomBy(-0.2), [zoomBy]);
+
+    const resetView = useCallback(() => {
+        setWorkspaceInfo(prev => {
+            const worldWidth = prev.width * BOUND_SCALE;
+            const worldHeight = prev.height * BOUND_SCALE;
+            return {
+                ...prev,
+                zoom: 1,
+                offsetX: (prev.width - worldWidth) / 2,
+                offsetY: (prev.height - worldHeight) / 2,
+            };
+        });
+    }, []);
+
+    const openNodePalette = useCallback(() => {
+        setNodeSelectorOpen(true);
+    }, []);
 
     const computeValidation = useCallback((nodesToValidate: INodeInfo[]) => {
         const errors: Record<number, z.ZodError> = {};
@@ -341,38 +401,35 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
 
     const handleScroll = useCallback((e: WheelEvent) => {
         e.preventDefault();
-        if (!self.current) return;
+        const rect = self.current?.getBoundingClientRect();
+        if (!rect) return;
 
-        const rect = self.current.getBoundingClientRect();
+        const delta = e.deltaY * -0.001;
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
 
-        const oldZoom = workspaceInfo.zoom;
-        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldZoom + e.deltaY * -0.001));
+        setWorkspaceInfo(prev => {
+            const oldZoom = prev.zoom;
+            const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldZoom + delta));
+            if (newZoom === oldZoom) {
+                return prev;
+            }
 
-        const worldX = (mouseX - workspaceInfo.offsetX) / oldZoom;
-        const worldY = (mouseY - workspaceInfo.offsetY) / oldZoom;
+            const worldX = (mouseX - prev.offsetX) / oldZoom;
+            const worldY = (mouseY - prev.offsetY) / oldZoom;
 
-        let newOffsetX = mouseX - worldX * newZoom;
-        let newOffsetY = mouseY - worldY * newZoom;
+            const nextOffsetX = mouseX - worldX * newZoom;
+            const nextOffsetY = mouseY - worldY * newZoom;
+            const clamped = clampOffset(prev.width, prev.height, newZoom, nextOffsetX, nextOffsetY);
 
-        const worldWidth = workspaceInfo.width * BOUND_SCALE;
-        const worldHeight = workspaceInfo.height * BOUND_SCALE;
-        const minOffsetX = workspaceInfo.width - worldWidth * newZoom;
-        const minOffsetY = workspaceInfo.height - worldHeight * newZoom;
-        const maxOffsetX = 0;
-        const maxOffsetY = 0;
-
-        newOffsetX = Math.max(minOffsetX, Math.min(maxOffsetX, newOffsetX));
-        newOffsetY = Math.max(minOffsetY, Math.min(maxOffsetY, newOffsetY));
-
-        setWorkspaceInfo((state) => ({
-            ...state,
-            zoom: newZoom,
-            offsetX: newOffsetX,
-            offsetY: newOffsetY,
-        }));
-    }, [workspaceInfo]);
+            return {
+                ...prev,
+                zoom: newZoom,
+                offsetX: clamped.offsetX,
+                offsetY: clamped.offsetY,
+            };
+        });
+    }, [clampOffset]);
 
     const handleNodeClicked = (id: number, e?: React.MouseEvent) => {
         if (e && (e.ctrlKey || e.metaKey)) {
@@ -490,8 +547,12 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
 
     useImperativeHandle(ref, () => ({
         serialize,
-        deserialize
-    }), [serialize, deserialize]);
+        deserialize,
+        openNodePalette,
+        zoomIn,
+        zoomOut,
+        resetView
+    }), [serialize, deserialize, openNodePalette, zoomIn, zoomOut, resetView]);
 
     function handleDeleteNode(id: number): void {
         setNodes(prevNodes => {
@@ -565,7 +626,7 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
             <NodeSelector open={nodeSelectorOpen} setOpen={setNodeSelectorOpen} onSelected={handleNewNode} />
             <div
                 ref={self}
-                className="relative h-full min-h-[480px] w-full overflow-hidden rounded-xl"
+                className="relative h-full min-h-[480px] w-full overflow-hidden"
                 style={{ maxHeight: "100%" }}
             >
                 <div

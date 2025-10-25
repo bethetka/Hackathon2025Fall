@@ -9,26 +9,26 @@ interface INodeSelectorProps {
     onSelected: (nodeType: string) => void;
 }
 
-export const NodeSelector: React.FC<INodeSelectorProps> = (props: INodeSelectorProps) => {
-    const [search, setSearch] = React.useState('')
-    const [pages, setPages] = React.useState<ICategoryForCreation[]>([])
-    const page = pages[pages.length - 1]
+export const NodeSelector: React.FC<INodeSelectorProps> = ({ open, setOpen, onSelected }: INodeSelectorProps) => {
+    const [search, setSearch] = React.useState("");
+    const [pages, setPages] = React.useState<ICategoryForCreation[]>([]);
+    const page = pages[pages.length - 1];
 
-    const down = useCallback(
-        (e: KeyboardEvent) => {
-            if (e.key.toLowerCase() === 'a' && e.shiftKey) {
-                e.preventDefault()
-                props.setOpen(!props.open)
-            }
-            if (props.open) {
-                if (e.key === 'Backspace' && search.length == 0) {
-                    console.log(search, search.length)
-                    e.preventDefault()
-                    setPages((pages) => pages.slice(0, -1))
-                }
-            }
-        }, [search]
-    )
+    const down = useCallback((e: KeyboardEvent) => {
+        const key = typeof e.key === "string" ? e.key.toLowerCase() : "";
+        const isShiftA = e.shiftKey && (e.code === "KeyA" || key === "a");
+
+        if (isShiftA && !e.repeat) {
+            e.preventDefault();
+            setOpen(!open);
+            return;
+        }
+
+        if (open && e.key === "Backspace" && search.length === 0) {
+            e.preventDefault();
+            setPages((prevPages) => prevPages.slice(0, -1));
+        }
+    }, [open, search, setOpen]);
 
     useEffect(() => {
         document.addEventListener('keydown', down)
@@ -36,13 +36,19 @@ export const NodeSelector: React.FC<INodeSelectorProps> = (props: INodeSelectorP
     }, [down])
 
 
-    return <CommandDialog open={props.open} onOpenChange={props.setOpen}>
-        <CommandInput placeholder="Search here..." value={search} onValueChange={s => {
-            setSearch(s);
-            console.log(s, search)
-        }} />
+    return <CommandDialog open={open} onOpenChange={setOpen}>
+        <CommandInput
+            placeholder="Search here..."
+            value={search}
+            onValueChange={setSearch}
+        />
         <CommandList>
-            {!page && Object.entries(categoriesForCreation).map(i => <CommandItem onSelect={() => setPages([...pages, i[1]])} key={i[0]}><img src={i[1].icon} width={32} />{i[1].name}</CommandItem>)}
+            {!page && Object.entries(categoriesForCreation).map(([key, category]) => (
+                <CommandItem onSelect={() => setPages((prev) => [...prev, category])} key={key}>
+                    <img src={category.icon} width={32} />
+                    {category.name}
+                </CommandItem>
+            ))}
 
             {!!page && <>
                 <CommandItem onSelect={() => {
@@ -50,10 +56,17 @@ export const NodeSelector: React.FC<INodeSelectorProps> = (props: INodeSelectorP
                 }}>Go back <CommandShortcut>Backspace</CommandShortcut></CommandItem>
                 <CommandItem disabled={true}>Selecting type of {page.name}</CommandItem>
                 <CommandSeparator />
-                {Object.entries(page.variants).map(i => <CommandItem key={i[1]} onSelect={() => {
-                    props.setOpen(false);
-                    props.onSelected(i[1])
-                }}>{i[0]}</CommandItem>)}
+                {Object.entries(page.variants).map(([label, nodeType]) => (
+                    <CommandItem
+                        key={nodeType}
+                        onSelect={() => {
+                            setOpen(false);
+                            onSelected(nodeType);
+                        }}
+                    >
+                        {label}
+                    </CommandItem>
+                ))}
             </>}
         </CommandList>
     </CommandDialog>
