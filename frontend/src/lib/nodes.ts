@@ -66,7 +66,6 @@ export const categoriesForCreation: Record<string, ICategoryForCreation> = {
         icon: serviceIcon,
         name: "Application Service",
         variants: {
-            "NodeJS": "node",
             "Dockerfile": "docker"
         }
     }

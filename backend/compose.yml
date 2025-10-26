@@ -1,0 +1,24 @@
+services:
+  database:
+    image: mongo  
+    ports:
+      - 127.0.0.1:17018:27017
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - app_network
+
+  app:
+    build: .
+    environment:
+      - MONGODB_URI=mongodb://database:27017/hackathon
+    env_file:
+      - .env.docker
+    networks:
+      - app_network
+
+volumes:
+  mongodb_data:
+
+networks:
+  app_network:
