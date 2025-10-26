@@ -1,15 +1,54 @@
 import NodeEditor, { type NodeEditorHandle } from "@/components/hackathon/node-editor";
 import { Link } from "react-router-dom";
-import React, { type ChangeEvent, useRef, useState, useCallback } from "react";
+import React, { type ChangeEvent, useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Check, Container, Copy, Download, FileJson, Keyboard, Plus, RefreshCw, Redo2, Undo2, Upload, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue
+} from "@/components/ui/select";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+    Check,
+    Container,
+    Copy,
+    Download,
+    FileJson,
+    FolderOpen,
+    Keyboard,
+    Loader2,
+    Plus,
+    RefreshCw,
+    Redo2,
+    Save,
+    Trash2,
+    Undo2,
+    Upload,
+    X,
+    ZoomIn,
+    ZoomOut
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildDockerComposeYaml } from "@/lib/generator";
 import { parseDockerCompose } from "@/lib/composeParser";
 import { useAuth } from "@/providers/AuthProvider";
+import { getApiErrorMessage } from "@/lib/apiError";
+import type { ApiTopology, ApiTopologyNode, ApiTopologySummary } from "@/lib/apiTypes";
+import {
+    createTopology,
+    deleteTopology,
+    getTopology,
+    listTopologies,
+    updateTopology
+} from "@/lib/topologyApi";
+import type { INodeInfo } from "@/components/hackathon/node";
 
 export const MainPage: React.FC = () => {
     const nodeEditorRef = useRef<NodeEditorHandle>(null);
@@ -35,6 +74,18 @@ export const MainPage: React.FC = () => {
     const [dockerContent, setDockerContent] = useState("");
     const [dockerCopySuccess, setDockerCopySuccess] = useState(false);
     const [dockerError, setDockerError] = useState<string | null>(null);
+
+    const queryClient = useQueryClient();
+    const [selectedTopologyId, setSelectedTopologyId] = useState<string | null>(null);
+    const [lastLoadedTopologyId, setLastLoadedTopologyId] = useState<string | null>(null);
+    const [topologyStatus, setTopologyStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+    const [isTopologyDialogOpen, setIsTopologyDialogOpen] = useState(false);
+    const [topologyDialogMode, setTopologyDialogMode] = useState<"create" | "update">("create");
+    const [topologyNameInput, setTopologyNameInput] = useState("");
+    const [topologyDescriptionInput, setTopologyDescriptionInput] = useState("");
+    const [topologyDialogError, setTopologyDialogError] = useState<string | null>(null);
+    const [isDeleteTopologyDialogOpen, setIsDeleteTopologyDialogOpen] = useState(false);
+    const [deleteTopologyError, setDeleteTopologyError] = useState<string | null>(null);
 
     const applyNodesFromJson = (content: string) => {
         const data = JSON.parse(content);
@@ -217,6 +268,205 @@ export const MainPage: React.FC = () => {
     };
 
     const { user, isLoading: isAuthLoading } = useAuth();
+
+    const createTopologyMutation = useMutation({
+        mutationFn: (payload: { name: string; description?: string; nodes: ApiTopologyNode[] }) =>
+            createTopology(payload),
+        onSuccess: (data: ApiTopology) => {
+            queryClient.invalidateQueries({ queryKey: ["topologies"] });
+            setSelectedTopologyId(data._id);
+        },
+    });
+
+    const updateTopologyMutation = useMutation({
+        mutationFn: ({ id, payload }: { id: string; payload: { name?: string; description?: string; nodes?: ApiTopologyNode[] } }) =>
+            updateTopology(id, payload),
+        onSuccess: (data: ApiTopology) => {
+            queryClient.invalidateQueries({ queryKey: ["topologies"] });
+            setSelectedTopologyId(data._id);
+        },
+    });
+
+    const getTopologyMutation = useMutation({
+        mutationFn: (id: string) => getTopology(id),
+    });
+
+    const deleteTopologyMutation = useMutation({
+        mutationFn: (id: string) => deleteTopology(id),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["topologies"] });
+        },
+    });
+
+    const topologiesQuery = useQuery<ApiTopologySummary[]>({
+        queryKey: ["topologies"] as const,
+        queryFn: listTopologies,
+        enabled: Boolean(user),
+        staleTime: 60_000,
+    });
+
+    const topologies = topologiesQuery.data ?? [];
+    const topologiesErrorMessage = topologiesQuery.isError
+        ? getApiErrorMessage(topologiesQuery.error, "Could not load saved topologies.")
+        : null;
+
+    useEffect(() => {
+        if (!user) {
+            setSelectedTopologyId(null);
+            setLastLoadedTopologyId(null);
+            setTopologyStatus(null);
+        }
+    }, [user]);
+
+    useEffect(() => {
+        if (!topologies.length) {
+            setSelectedTopologyId(null);
+            return;
+        }
+        setSelectedTopologyId(prev => (prev && topologies.some(item => item._id === prev) ? prev : topologies[0]._id));
+    }, [topologies]);
+
+    useEffect(() => {
+        if (!topologyStatus) return;
+        const timer = window.setTimeout(() => setTopologyStatus(null), 4000);
+        return () => window.clearTimeout(timer);
+    }, [topologyStatus]);
+
+    const selectedTopology = useMemo(
+        () => (selectedTopologyId ? topologies.find(item => item._id === selectedTopologyId) ?? null : null),
+        [selectedTopologyId, topologies]
+    );
+
+    const isSavingTopology = createTopologyMutation.isPending || updateTopologyMutation.isPending;
+    const isLoadingTopology = getTopologyMutation.isPending;
+    const isDeletingTopology = deleteTopologyMutation.isPending;
+
+    const openCreateTopologyDialog = useCallback(() => {
+        setTopologyDialogMode("create");
+        setTopologyNameInput("");
+        setTopologyDescriptionInput("");
+        setTopologyDialogError(null);
+        setIsTopologyDialogOpen(true);
+    }, []);
+
+    const openUpdateTopologyDialog = useCallback(() => {
+        if (!selectedTopology) return;
+        setTopologyDialogMode("update");
+        setTopologyNameInput(selectedTopology.name);
+        setTopologyDescriptionInput(selectedTopology.description ?? "");
+        setTopologyDialogError(null);
+        setIsTopologyDialogOpen(true);
+    }, [selectedTopology]);
+
+    const handleTopologyDialogSubmit = useCallback(async () => {
+        setTopologyDialogError(null);
+        const trimmedName = topologyNameInput.trim();
+        if (trimmedName.length === 0) {
+            setTopologyDialogError("Please provide a name for this topology.");
+            return;
+        }
+
+        let nodes: INodeInfo[];
+        try {
+            nodes = nodeEditorRef.current?.serialize() ?? [];
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setTopologyDialogError(message);
+            return;
+        }
+
+        const nodePayload: ApiTopologyNode[] = nodes.map(node => ({
+            id: node.id,
+            type: node.type,
+            x: node.x,
+            y: node.y,
+            fields: { ...(node.fields ?? {}) },
+        }));
+
+        const trimmedDescription = topologyDescriptionInput.trim();
+
+        try {
+            let result: ApiTopology;
+            if (topologyDialogMode === "create") {
+                result = await createTopologyMutation.mutateAsync({
+                    name: trimmedName,
+                    description: trimmedDescription ? trimmedDescription : undefined,
+                    nodes: nodePayload,
+                });
+            } else {
+                if (!selectedTopologyId) {
+                    setTopologyDialogError("No topology selected to update.");
+                    return;
+                }
+                result = await updateTopologyMutation.mutateAsync({
+                    id: selectedTopologyId,
+                    payload: {
+                        name: trimmedName,
+                        description: trimmedDescription ? trimmedDescription : undefined,
+                        nodes: nodePayload,
+                    },
+                });
+            }
+
+            setIsTopologyDialogOpen(false);
+            setTopologyDialogError(null);
+            setTopologyNameInput("");
+            setTopologyDescriptionInput("");
+            setTopologyStatus({
+                type: "success",
+                message: `${topologyDialogMode === "create" ? "Saved" : "Updated"} "${result.name}".`,
+            });
+            setLastLoadedTopologyId(result._id);
+        } catch (error) {
+            const message = getApiErrorMessage(error, "Could not save topology.");
+            setTopologyDialogError(message);
+        }
+    }, [
+        topologyNameInput,
+        topologyDescriptionInput,
+        topologyDialogMode,
+        createTopologyMutation,
+        updateTopologyMutation,
+        selectedTopologyId,
+        nodeEditorRef,
+    ]);
+
+    const handleLoadTopology = useCallback(async () => {
+        if (!selectedTopologyId) return;
+        try {
+            const topology = await getTopologyMutation.mutateAsync(selectedTopologyId);
+            const nodes: INodeInfo[] = topology.nodes.map(node => ({
+                id: node.id,
+                type: node.type,
+                x: node.x,
+                y: node.y,
+                fields: { ...(node.fields ?? {}) },
+            }));
+            nodeEditorRef.current?.deserialize(nodes);
+            setLastLoadedTopologyId(topology._id);
+            setTopologyStatus({ type: "success", message: `Loaded "${topology.name}".` });
+        } catch (error) {
+            const message = getApiErrorMessage(error, "Could not load topology.");
+            setTopologyStatus({ type: "error", message });
+        }
+    }, [selectedTopologyId, getTopologyMutation, nodeEditorRef]);
+
+    const handleDeleteTopology = useCallback(async () => {
+        if (!selectedTopologyId) return;
+        setDeleteTopologyError(null);
+        const topologyId = selectedTopologyId;
+        try {
+            await deleteTopologyMutation.mutateAsync(topologyId);
+            setTopologyStatus({ type: "success", message: "Topology deleted." });
+            setIsDeleteTopologyDialogOpen(false);
+            setSelectedTopologyId(prev => (prev === topologyId ? null : prev));
+            setLastLoadedTopologyId(prev => (prev === topologyId ? null : prev));
+        } catch (error) {
+            const message = getApiErrorMessage(error, "Could not delete topology.");
+            setDeleteTopologyError(message);
+        }
+    }, [selectedTopologyId, deleteTopologyMutation]);
+
     const userInitial = user?.username?.charAt(0).toUpperCase() ?? "";
 
     return (
@@ -300,6 +550,15 @@ export const MainPage: React.FC = () => {
                                 </div>
                             </div>
 
+                            {!isAuthLoading && !user && (
+                                <div className="space-y-2 border-t border-border/60 pt-3">
+                                    <div className="text-xs font-semibold uppercase text-muted-foreground">Saved Topologies</div>
+                                    <p className="text-xs text-muted-foreground">
+                                        Sign in to save and load your topologies across devices.
+                                    </p>
+                                </div>
+                            )}
+
                             <div className="space-y-2 border-t border-border/60 pt-3">
                                 <div className="text-xs font-semibold uppercase text-muted-foreground">JSON</div>
                                 <Button variant="outline" className="justify-start gap-2" onClick={handleExportJson}>
@@ -336,12 +595,148 @@ export const MainPage: React.FC = () => {
                                 </Button>
                             </div>
                         </div>
-                    </div>
                 </div>
+            </div>
 
-                <div className="pointer-events-auto absolute bottom-6 left-6">
-                    <div className="w-[240px] rounded-xl border bg-background/90 px-4 py-3 shadow-lg backdrop-blur">
-                        <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+            {user && (
+                <div className="pointer-events-auto absolute left-1/2 top-6 z-20 flex w-[calc(100%_-_3rem)] max-w-[960px] -translate-x-1/2 flex-col gap-3 rounded-2xl border bg-background/90 px-4 py-3 shadow-lg backdrop-blur">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <span className="text-xs font-semibold uppercase text-muted-foreground">Saved Topologies</span>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="justify-start gap-2"
+                            onClick={openCreateTopologyDialog}
+                            disabled={isSavingTopology}
+                        >
+                            {isSavingTopology ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                                <Save className="h-3.5 w-3.5" />
+                            )}
+                            Save current as new
+                        </Button>
+                    </div>
+
+                    {topologyStatus && (
+                        <div
+                            className={cn(
+                                "rounded-md border px-3 py-2 text-[11px] leading-tight",
+                                topologyStatus.type === "success"
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : "border-red-200 bg-red-50 text-red-600"
+                            )}
+                        >
+                            {topologyStatus.message}
+                        </div>
+                    )}
+
+                    {topologiesErrorMessage ? (
+                        <Alert variant="destructive">
+                            <AlertTitle>Could not load</AlertTitle>
+                            <AlertDescription>{topologiesErrorMessage}</AlertDescription>
+                        </Alert>
+                    ) : topologiesQuery.isPending ? (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Loading saved topologies...
+                        </div>
+                    ) : topologies.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                            No topologies saved yet. Save your canvas to reuse it later.
+                        </p>
+                    ) : (
+                        <>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Select
+                                    value={selectedTopologyId ?? undefined}
+                                    onValueChange={setSelectedTopologyId}
+                                    disabled={isSavingTopology || isLoadingTopology || isDeletingTopology}
+                                >
+                                    <SelectTrigger className="w-48 md:w-60">
+                                        <SelectValue placeholder="Choose a topology" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {topologies.map(topology => (
+                                            <SelectItem key={topology._id} value={topology._id}>
+                                                {topology.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <div className="flex flex-wrap gap-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="justify-center gap-2"
+                                        onClick={handleLoadTopology}
+                                        disabled={!selectedTopologyId || isLoadingTopology}
+                                    >
+                                        {isLoadingTopology ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                            <FolderOpen className="h-3.5 w-3.5" />
+                                        )}
+                                        Load
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="justify-center gap-2"
+                                        onClick={openUpdateTopologyDialog}
+                                        disabled={!selectedTopologyId || isSavingTopology}
+                                    >
+                                        {isSavingTopology ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                            <Save className="h-3.5 w-3.5" />
+                                        )}
+                                        Overwrite
+                                    </Button>
+                                </div>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="justify-start gap-2 text-red-600 hover:bg-red-50"
+                                    onClick={() => {
+                                        setDeleteTopologyError(null);
+                                        setIsDeleteTopologyDialogOpen(true);
+                                    }}
+                                    disabled={!selectedTopologyId || isDeletingTopology}
+                                >
+                                    {isDeletingTopology ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                    )}
+                                    Delete
+                                </Button>
+                            </div>
+                            {selectedTopology && (
+                                <div className="flex flex-wrap items-center gap-4 text-[11px] leading-snug text-muted-foreground">
+                                    <div className="flex items-center gap-1">
+                                        <span className="font-semibold text-foreground">{selectedTopology.nodeCount}</span>
+                                        <span>nodes</span>
+                                    </div>
+                                    {selectedTopology.updatedAt && (
+                                        <div className="flex items-center gap-1">
+                                            <span>Updated</span>
+                                            <span>{formatShortDate(selectedTopology.updatedAt)}</span>
+                                        </div>
+                                    )}
+                                    {lastLoadedTopologyId && lastLoadedTopologyId === selectedTopology._id && (
+                                        <span className="text-primary">Currently loaded</span>
+                                    )}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            )}
+
+            <div className="pointer-events-auto absolute bottom-6 left-6">
+                <div className="w-[240px] rounded-xl border bg-background/90 px-4 py-3 shadow-lg backdrop-blur">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
                             <Keyboard className="h-4 w-4" />
                             Hotkeys
                         </div>
@@ -404,6 +799,135 @@ export const MainPage: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            <Dialog
+                open={isTopologyDialogOpen}
+                onOpenChange={(open) => {
+                    setIsTopologyDialogOpen(open);
+                    if (!open) {
+                        setTopologyDialogError(null);
+                    }
+                }}
+            >
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>
+                            {topologyDialogMode === "create" ? "Save current topology" : "Overwrite topology"}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {topologyDialogMode === "create"
+                                ? "Give your current canvas a meaningful name so you can revisit it later."
+                                : "Update the selected topology with your current canvas state."}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4">
+                        <div className="space-y-1">
+                            <Label htmlFor="topology-name" className="text-xs uppercase text-muted-foreground">
+                                Name
+                            </Label>
+                            <Input
+                                id="topology-name"
+                                value={topologyNameInput}
+                                onChange={(e) => setTopologyNameInput(e.target.value)}
+                                disabled={isSavingTopology}
+                                placeholder="My topology"
+                                autoComplete="off"
+                            />
+                        </div>
+
+                        <div className="space-y-1">
+                            <Label htmlFor="topology-description" className="text-xs uppercase text-muted-foreground">
+                                Description (optional)
+                            </Label>
+                            <Textarea
+                                id="topology-description"
+                                value={topologyDescriptionInput}
+                                onChange={(e) => setTopologyDescriptionInput(e.target.value)}
+                                rows={3}
+                                disabled={isSavingTopology}
+                                placeholder="Add context so future you understands this layout."
+                            />
+                        </div>
+
+                        {topologyDialogError && (
+                            <Alert variant="destructive">
+                                <AlertTitle>Could not save</AlertTitle>
+                                <AlertDescription>{topologyDialogError}</AlertDescription>
+                            </Alert>
+                        )}
+
+                        <div className="flex justify-end gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => setIsTopologyDialogOpen(false)}
+                                disabled={isSavingTopology}
+                            >
+                                Cancel
+                            </Button>
+                            <Button onClick={handleTopologyDialogSubmit} disabled={isSavingTopology}>
+                                {isSavingTopology ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Save className="mr-2 h-4 w-4" />
+                                )}
+                                {topologyDialogMode === "create" ? "Save" : "Overwrite"}
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog
+                open={isDeleteTopologyDialogOpen}
+                onOpenChange={(open) => {
+                    setIsDeleteTopologyDialogOpen(open);
+                    if (!open) {
+                        setDeleteTopologyError(null);
+                    }
+                }}
+            >
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Delete topology</DialogTitle>
+                        <DialogDescription>
+                            This action permanently removes{" "}
+                            <span className="font-semibold">
+                                {selectedTopology?.name ?? "this topology"}
+                            </span>.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {deleteTopologyError && (
+                        <Alert variant="destructive">
+                            <AlertTitle>Could not delete</AlertTitle>
+                            <AlertDescription>{deleteTopologyError}</AlertDescription>
+                        </Alert>
+                    )}
+
+                    <div className="flex justify-end gap-2">
+                        <Button
+                            variant="outline"
+                            onClick={() => setIsDeleteTopologyDialogOpen(false)}
+                            disabled={isDeletingTopology}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleDeleteTopology}
+                            disabled={isDeletingTopology}
+                        >
+                            {isDeletingTopology ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Trash2 className="mr-2 h-4 w-4" />
+                            )}
+                            Delete
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
 
             <Dialog open={isSerializeDialogOpen} onOpenChange={setIsSerializeDialogOpen}>
                 <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
@@ -564,3 +1088,14 @@ export const MainPage: React.FC = () => {
         </div>
     );
 };
+
+function formatShortDate(input: Date | string): string {
+    const value = input instanceof Date ? input : new Date(input);
+    if (Number.isNaN(value.getTime())) return "";
+    return new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    }).format(value);
+}

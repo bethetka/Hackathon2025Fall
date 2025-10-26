@@ -226,7 +226,7 @@ const NodeEditor = forwardRef<NodeEditorHandle, NodeEditorProps>(({ onHistoryCha
 
     const [dragStartNodes, setDragStartNodes] = useState<INodeInfo[] | null>(null);
 
-    const handleNodeDragStart = (id: number) => {
+    const handleNodeDragStart = (_id: number) => {
         setDragStartNodes(nodes.map(node => ({ ...node })));
     };
 
@@ -337,11 +337,6 @@ const NodeEditor = forwardRef<NodeEditorHandle, NodeEditorProps>(({ onHistoryCha
                 : node
         );
         setNodes(updatedNodes);
-
-        if (e.type === 'mouseup' && dragStartNodes) {
-            handleHistoryUpdate(updatedNodes, 'Move nodes');
-            setDragStartNodes(null);
-        }
     };
 
     const screenToWorld = useCallback((screenX: number, screenY: number) => {
@@ -353,6 +348,9 @@ const NodeEditor = forwardRef<NodeEditorHandle, NodeEditorProps>(({ onHistoryCha
     }, [workspaceInfo.offsetX, workspaceInfo.offsetY, workspaceInfo.zoom]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
+        if (e.button !== 0) {
+            return;
+        }
         if (e.ctrlKey || e.metaKey) {
             setIsMarqueeSelecting(true);
             const worldPos = screenToWorld(e.clientX, e.clientY);
@@ -470,6 +468,9 @@ const NodeEditor = forwardRef<NodeEditorHandle, NodeEditorProps>(({ onHistoryCha
             setNodesWithinMarquee(new Set());
         }
     }, [isPanning, isMarqueeSelecting, marqueeRect, nodes, selectedNodeIds]);
+    const handleCanvasMouseUp = useCallback<React.MouseEventHandler<HTMLDivElement>>(() => {
+        handleMouseUp();
+    }, [handleMouseUp]);
 
     useEffect(() => {
         const handleGlobalMouseUp = () => {
@@ -861,6 +862,7 @@ const NodeEditor = forwardRef<NodeEditorHandle, NodeEditorProps>(({ onHistoryCha
                         backgroundSize: "40px 40px",
                     }}
                     onMouseDown={handleMouseDown}
+                    onMouseUp={handleCanvasMouseUp}
                     onClick={handleCanvasClick}
                 >
                     {nodes.map((i) => (
