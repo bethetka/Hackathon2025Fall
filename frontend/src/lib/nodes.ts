@@ -1,6 +1,5 @@
 import redisIcon from "../icons/tech/redis.svg";
 import mongoIcon from "../icons/tech/mongo.svg";
-import nodeIcon from "../icons/tech/node.svg";
 import dockerIcon from "../icons/tech/docker.svg";
 import dbIcon from "../icons/tech/database.svg";
 import serviceIcon from "../icons/tech/service.svg";

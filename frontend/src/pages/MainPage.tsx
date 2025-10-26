@@ -582,7 +582,6 @@ docker compose ps`;
             setAutoinstallCopySuccess(false);
             setIsAutoinstallDialogOpen(true);
         } catch (e) {
-            const message = e instanceof Error ? e.message : String(e);
             setAutoinstallContent("");
             setAutoinstallCopySuccess(false);
             setIsAutoinstallDialogOpen(true);
