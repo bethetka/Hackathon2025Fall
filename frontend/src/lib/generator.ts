@@ -17,7 +17,6 @@ export interface IDockerCompose {
     networks?: Record<string, Record<string, never>>;
 }
 
-const DEFAULT_NODE_IMAGE = "node:20-alpine";
 const DEFAULT_REDIS_IMAGE = "redis:7-alpine";
 const DEFAULT_MONGO_IMAGE = "mongo:7";
 
@@ -54,22 +53,21 @@ function mapNodeToService(node: INodeInfo): IDockerComposeService | null {
     const fields = node.fields as Record<string, unknown>;
     if (node.type === "redis") {
         const password = typeof fields.password === "string" ? String(fields.password) : undefined;
+        const port = typeof fields.port === "number" ? Number(fields.port) : 6379;
         const environment = password ? { REDIS_PASSWORD: password } : undefined;
         const command = password ? ["redis-server", "--requirepass", password] : undefined;
-        return { image: DEFAULT_REDIS_IMAGE, environment, command };
+        return { image: DEFAULT_REDIS_IMAGE, environment, command, ports: [`${port}:6379`] };
     }
     if (node.type === "mongo") {
         const database = typeof fields.database === "string" ? String(fields.database) : undefined;
         const username = typeof fields.username === "string" ? String(fields.username) : undefined;
         const password = typeof fields.password === "string" ? String(fields.password) : undefined;
+        const port = typeof fields.port === "number" ? Number(fields.port) : 27017;
         const environment: Record<string, string> = {};
         if (database) environment.MONGO_INITDB_DATABASE = database;
         if (username) environment.MONGO_INITDB_ROOT_USERNAME = username;
         if (password) environment.MONGO_INITDB_ROOT_PASSWORD = password;
-        return { image: DEFAULT_MONGO_IMAGE, environment: Object.keys(environment).length ? environment : undefined };
-    }
-    if (node.type === "node") {
-        return { image: DEFAULT_NODE_IMAGE };
+        return { image: DEFAULT_MONGO_IMAGE, environment: Object.keys(environment).length ? environment : undefined, ports: [`${port}:27017`] };
     }
     if (node.type === "docker") {
         const image = typeof fields.image === "string" && fields.image.length ? String(fields.image) : undefined;

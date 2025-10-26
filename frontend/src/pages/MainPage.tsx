@@ -33,7 +33,8 @@ import {
     Upload,
     X,
     ZoomIn,
-    ZoomOut
+    ZoomOut,
+    Terminal
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildDockerComposeYaml } from "@/lib/generator";
@@ -56,6 +57,9 @@ export const MainPage: React.FC = () => {
     const composeFileInputRef = useRef<HTMLInputElement>(null);
     const [canUndo, setCanUndo] = useState(false);
     const [canRedo, setCanRedo] = useState(false);
+    const [isAutoinstallDialogOpen, setIsAutoinstallDialogOpen] = useState(false);
+    const [autoinstallContent, setAutoinstallContent] = useState("");
+    const [autoinstallCopySuccess, setAutoinstallCopySuccess] = useState(false);
 
     const handleHistoryChange = useCallback((canUndo: boolean, canRedo: boolean) => {
         setCanUndo(canUndo);
@@ -467,6 +471,131 @@ export const MainPage: React.FC = () => {
         }
     }, [selectedTopologyId, deleteTopologyMutation]);
 
+    const handleAutoinstallScript = () => {
+        try {
+            const nodes = nodeEditorRef.current?.serialize();
+            if (!nodes) return;
+
+            const composeYaml = buildDockerComposeYaml(nodes);
+            const folder = `/opt/stackpilot/${Math.ceil(Math.random() * 100_000_000).toString(16)}`;
+            const script = `#!/bin/bash
+
+set -euo pipefail
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+
+# Check if running as root
+if [ "\$(id -u)" -ne 0 ]; then
+    echo "This script must be run with sudo privileges" >&2
+    exit 1
+fi
+
+# 1. Install Docker if not present
+if ! command -v docker &>/dev/null; then
+    echo "Docker not found. Installing Docker..."
+    
+    # Detect OS
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=\$ID
+        VERSION=\$VERSION_ID
+    elif type lsb_release >/dev/null 2>&1; then
+        OS=\$(lsb_release -si | tr '[:upper:]' '[:lower:]')
+        VERSION=\$(lsb_release -sr)
+    elif [ -f /etc/lsb-release ]; then
+        . /etc/lsb-release
+        OS=\$DISTRIB_ID
+        VERSION=\$DISTRIB_RELEASE
+    elif [ -f /etc/redhat-release ]; then
+        OS="rhel"
+        VERSION=\$(grep -oE '[0-9]+\\.[0-9]+' /etc/redhat-release | head -1)
+    else
+        OS=\$(uname -s)
+        VERSION=\$(uname -r)
+    fi
+    
+    # Install based on OS
+    case "\$OS" in
+        ubuntu|debian)
+            apt-get update
+            apt-get install -y \\
+                apt-transport-https \\
+                ca-certificates \\
+                curl \\
+                gnupg \\
+                lsb-release
+            
+            mkdir -p /etc/apt/keyrings
+            curl -fsSL https://download.docker.com/linux/\$OS/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+            
+            echo "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/\$OS \$(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+            
+            apt-get update
+            apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            
+            systemctl enable docker
+            systemctl start docker
+            ;;
+        centos|rhel|fedora)
+            if [ "\$OS" = "fedora" ]; then
+                dnf -y install dnf-plugins-core
+                dnf config-manager --add-repo https://download.docker.com/linux/\$OS/docker-ce.repo
+                dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            else
+                yum install -y yum-utils
+                yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+                yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            fi
+            
+            systemctl enable docker
+            systemctl start docker
+            ;;
+        *)
+            echo "Unsupported OS: \$OS" >&2
+            exit 1
+            ;;
+    esac
+    
+    echo "Docker installed successfully"
+fi
+
+# 2. Create application directory
+APP_DIR="${folder}"
+mkdir -p "\$APP_DIR"
+echo "Created application directory: \$APP_DIR"
+
+# 3. Generate docker-compose.yml from embedded content
+COMPOSE_FILE="\$APP_DIR/docker-compose.yml"
+cat > "\$COMPOSE_FILE" << 'EOF'
+${composeYaml}
+EOF
+
+# 4. Run docker-compose
+echo "Starting containers..."
+cd "\$APP_DIR"
+docker compose up -d
+
+# Verify
+echo -e "\\nInstallation complete! Containers are running:"
+docker compose ps`;
+
+            setAutoinstallContent(script);
+            setAutoinstallCopySuccess(false);
+            setIsAutoinstallDialogOpen(true);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            setAutoinstallContent("");
+            setAutoinstallCopySuccess(false);
+            setIsAutoinstallDialogOpen(true);
+        }
+    };
+
+    const handleAutoinstallCopy = () => {
+        navigator.clipboard.writeText(autoinstallContent).then(() => {
+            setAutoinstallCopySuccess(true);
+            setTimeout(() => setAutoinstallCopySuccess(false), 2000);
+        });
+    };
+
     const userInitial = user?.username?.charAt(0).toUpperCase() ?? "";
 
     return (
@@ -593,150 +722,154 @@ export const MainPage: React.FC = () => {
                                     <Upload className="h-4 w-4" />
                                     Import Compose
                                 </Button>
-                            </div>
-                        </div>
-                </div>
-            </div>
-
-            {user && (
-                <div className="pointer-events-auto absolute left-1/2 top-6 z-20 flex w-[calc(100%_-_3rem)] max-w-[960px] -translate-x-1/2 flex-col gap-3 rounded-2xl border bg-background/90 px-4 py-3 shadow-lg backdrop-blur">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <span className="text-xs font-semibold uppercase text-muted-foreground">Saved Topologies</span>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="justify-start gap-2"
-                            onClick={openCreateTopologyDialog}
-                            disabled={isSavingTopology}
-                        >
-                            {isSavingTopology ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                                <Save className="h-3.5 w-3.5" />
-                            )}
-                            Save current as new
-                        </Button>
-                    </div>
-
-                    {topologyStatus && (
-                        <div
-                            className={cn(
-                                "rounded-md border px-3 py-2 text-[11px] leading-tight",
-                                topologyStatus.type === "success"
-                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                    : "border-red-200 bg-red-50 text-red-600"
-                            )}
-                        >
-                            {topologyStatus.message}
-                        </div>
-                    )}
-
-                    {topologiesErrorMessage ? (
-                        <Alert variant="destructive">
-                            <AlertTitle>Could not load</AlertTitle>
-                            <AlertDescription>{topologiesErrorMessage}</AlertDescription>
-                        </Alert>
-                    ) : topologiesQuery.isPending ? (
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            Loading saved topologies...
-                        </div>
-                    ) : topologies.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                            No topologies saved yet. Save your canvas to reuse it later.
-                        </p>
-                    ) : (
-                        <>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <Select
-                                    value={selectedTopologyId ?? undefined}
-                                    onValueChange={setSelectedTopologyId}
-                                    disabled={isSavingTopology || isLoadingTopology || isDeletingTopology}
-                                >
-                                    <SelectTrigger className="w-48 md:w-60">
-                                        <SelectValue placeholder="Choose a topology" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {topologies.map(topology => (
-                                            <SelectItem key={topology._id} value={topology._id}>
-                                                {topology.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <div className="flex flex-wrap gap-2">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="justify-center gap-2"
-                                        onClick={handleLoadTopology}
-                                        disabled={!selectedTopologyId || isLoadingTopology}
-                                    >
-                                        {isLoadingTopology ? (
-                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                        ) : (
-                                            <FolderOpen className="h-3.5 w-3.5" />
-                                        )}
-                                        Load
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="justify-center gap-2"
-                                        onClick={openUpdateTopologyDialog}
-                                        disabled={!selectedTopologyId || isSavingTopology}
-                                    >
-                                        {isSavingTopology ? (
-                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                        ) : (
-                                            <Save className="h-3.5 w-3.5" />
-                                        )}
-                                        Overwrite
-                                    </Button>
-                                </div>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="justify-start gap-2 text-red-600 hover:bg-red-50"
-                                    onClick={() => {
-                                        setDeleteTopologyError(null);
-                                        setIsDeleteTopologyDialogOpen(true);
-                                    }}
-                                    disabled={!selectedTopologyId || isDeletingTopology}
-                                >
-                                    {isDeletingTopology ? (
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                    ) : (
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                    )}
-                                    Delete
+                                <Button variant="outline" className="justify-start gap-2" onClick={handleAutoinstallScript}>
+                                    <Terminal className="h-4 w-4" />
+                                    Autoinstall Script
                                 </Button>
                             </div>
-                            {selectedTopology && (
-                                <div className="flex flex-wrap items-center gap-4 text-[11px] leading-snug text-muted-foreground">
-                                    <div className="flex items-center gap-1">
-                                        <span className="font-semibold text-foreground">{selectedTopology.nodeCount}</span>
-                                        <span>nodes</span>
-                                    </div>
-                                    {selectedTopology.updatedAt && (
-                                        <div className="flex items-center gap-1">
-                                            <span>Updated</span>
-                                            <span>{formatShortDate(selectedTopology.updatedAt)}</span>
-                                        </div>
-                                    )}
-                                    {lastLoadedTopologyId && lastLoadedTopologyId === selectedTopology._id && (
-                                        <span className="text-primary">Currently loaded</span>
-                                    )}
-                                </div>
-                            )}
-                        </>
-                    )}
+                        </div>
+                    </div>
                 </div>
-            )}
 
-            <div className="pointer-events-auto absolute bottom-6 left-6">
-                <div className="w-[240px] rounded-xl border bg-background/90 px-4 py-3 shadow-lg backdrop-blur">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                {user && (
+                    <div className="pointer-events-auto absolute left-1/2 top-6 z-20 flex w-[calc(100%_-_3rem)] max-w-[960px] -translate-x-1/2 flex-col gap-3 rounded-2xl border bg-background/90 px-4 py-3 shadow-lg backdrop-blur">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <span className="text-xs font-semibold uppercase text-muted-foreground">Saved Topologies</span>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="justify-start gap-2"
+                                onClick={openCreateTopologyDialog}
+                                disabled={isSavingTopology}
+                            >
+                                {isSavingTopology ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                    <Save className="h-3.5 w-3.5" />
+                                )}
+                                Save current as new
+                            </Button>
+                        </div>
+
+                        {topologyStatus && (
+                            <div
+                                className={cn(
+                                    "rounded-md border px-3 py-2 text-[11px] leading-tight",
+                                    topologyStatus.type === "success"
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                        : "border-red-200 bg-red-50 text-red-600"
+                                )}
+                            >
+                                {topologyStatus.message}
+                            </div>
+                        )}
+
+                        {topologiesErrorMessage ? (
+                            <Alert variant="destructive">
+                                <AlertTitle>Could not load</AlertTitle>
+                                <AlertDescription>{topologiesErrorMessage}</AlertDescription>
+                            </Alert>
+                        ) : topologiesQuery.isPending ? (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Loading saved topologies...
+                            </div>
+                        ) : topologies.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">
+                                No topologies saved yet. Save your canvas to reuse it later.
+                            </p>
+                        ) : (
+                            <>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Select
+                                        value={selectedTopologyId ?? undefined}
+                                        onValueChange={setSelectedTopologyId}
+                                        disabled={isSavingTopology || isLoadingTopology || isDeletingTopology}
+                                    >
+                                        <SelectTrigger className="w-48 md:w-60">
+                                            <SelectValue placeholder="Choose a topology" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {topologies.map(topology => (
+                                                <SelectItem key={topology._id} value={topology._id}>
+                                                    {topology.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="justify-center gap-2"
+                                            onClick={handleLoadTopology}
+                                            disabled={!selectedTopologyId || isLoadingTopology}
+                                        >
+                                            {isLoadingTopology ? (
+                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                            ) : (
+                                                <FolderOpen className="h-3.5 w-3.5" />
+                                            )}
+                                            Load
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="justify-center gap-2"
+                                            onClick={openUpdateTopologyDialog}
+                                            disabled={!selectedTopologyId || isSavingTopology}
+                                        >
+                                            {isSavingTopology ? (
+                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                            ) : (
+                                                <Save className="h-3.5 w-3.5" />
+                                            )}
+                                            Overwrite
+                                        </Button>
+                                    </div>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="justify-start gap-2 text-red-600 hover:bg-red-50"
+                                        onClick={() => {
+                                            setDeleteTopologyError(null);
+                                            setIsDeleteTopologyDialogOpen(true);
+                                        }}
+                                        disabled={!selectedTopologyId || isDeletingTopology}
+                                    >
+                                        {isDeletingTopology ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                        )}
+                                        Delete
+                                    </Button>
+                                </div>
+                                {selectedTopology && (
+                                    <div className="flex flex-wrap items-center gap-4 text-[11px] leading-snug text-muted-foreground">
+                                        <div className="flex items-center gap-1">
+                                            <span className="font-semibold text-foreground">{selectedTopology.nodeCount}</span>
+                                            <span>nodes</span>
+                                        </div>
+                                        {selectedTopology.updatedAt && (
+                                            <div className="flex items-center gap-1">
+                                                <span>Updated</span>
+                                                <span>{formatShortDate(selectedTopology.updatedAt)}</span>
+                                            </div>
+                                        )}
+                                        {lastLoadedTopologyId && lastLoadedTopologyId === selectedTopology._id && (
+                                            <span className="text-primary">Currently loaded</span>
+                                        )}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                )}
+
+                <div className="pointer-events-auto absolute bottom-6 left-6">
+                    <div className="w-[240px] rounded-xl border bg-background/90 px-4 py-3 shadow-lg backdrop-blur">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
                             <Keyboard className="h-4 w-4" />
                             Hotkeys
                         </div>
@@ -1083,6 +1216,50 @@ export const MainPage: React.FC = () => {
                             </div>
                         </div>
                     )}
+                </DialogContent>
+            </Dialog>
+            <Dialog open={isAutoinstallDialogOpen} onOpenChange={setIsAutoinstallDialogOpen}>
+                <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle>Autoinstall Script</DialogTitle>
+                        <DialogDescription>
+                            Bash script to automatically install Docker (if needed), create directory, and run your compose.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex-1 overflow-hidden flex flex-col">
+                        <div className="flex justify-between items-center mb-2">
+                            <div className="text-sm text-muted-foreground">
+                                {autoinstallContent.split('\n').length} lines
+                            </div>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleAutoinstallCopy}
+                                className="gap-2"
+                                disabled={!autoinstallContent}
+                            >
+                                {autoinstallCopySuccess ? (
+                                    <>
+                                        <Check className="h-3 w-3" />
+                                        Copied!
+                                    </>
+                                ) : (
+                                    <>
+                                        <Copy className="h-3 w-3" />
+                                        Copy Script
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+                        <div className="flex-1 overflow-auto rounded-md border bg-muted/30 p-4 font-mono text-sm">
+                            <pre className="whitespace-pre-wrap break-all">
+                                {autoinstallContent}
+                            </pre>
+                        </div>
+                        <div className="mt-4 text-sm text-muted-foreground">
+                            <p>Pro Tip: Save this as install.sh, make it executable with chmod +x install.sh, and run with sudo ./install.sh</p>
+                        </div>
+                    </div>
                 </DialogContent>
             </Dialog>
         </div>
