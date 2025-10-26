@@ -6,7 +6,8 @@ import { nodeTypes } from "@/lib/nodes";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Trash2 } from "lucide-react";
+import { Trash2, Undo2, Redo2 } from "lucide-react";
+import { History } from "@/lib/history";
 
 function snapToGrid(x: number, y: number, gridSize = 1, gridSizeY = gridSize) {
     const snap = (value: number, size: number) =>
@@ -18,6 +19,10 @@ function snapToGrid(x: number, y: number, gridSize = 1, gridSizeY = gridSize) {
     };
 }
 
+export interface NodeEditorProps {
+    onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
+}
+
 export interface NodeEditorHandle {
     serialize: () => INodeInfo[];
     deserialize: (nodes: INodeInfo[]) => void;
@@ -25,9 +30,13 @@ export interface NodeEditorHandle {
     zoomIn: () => void;
     zoomOut: () => void;
     resetView: () => void;
+    undo: () => void;
+    redo: () => void;
+    canUndo: () => boolean;
+    canRedo: () => boolean;
 }
 
-const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
+const NodeEditor = forwardRef<NodeEditorHandle, NodeEditorProps>(({ onHistoryChange }, ref) => {
     const BOUND_SCALE = 3;
     const MIN_ZOOM = 0.5;
     const MAX_ZOOM = 4;
@@ -55,6 +64,30 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
     const [selectedNode, setSelectedNode] = useState<INodeInfo | null>(null);
     const [nodeSelectorOpen, setNodeSelectorOpen] = useState(false);
     const [nodeValidationErrors, setNodeValidationErrors] = useState<Record<number, z.ZodError>>({});
+    const [canUndoState, setCanUndoState] = useState(false);
+    const [canRedoState, setCanRedoState] = useState(false);
+    const history = useRef<History | null>(null);
+
+    const notifyHistoryChange = useCallback(() => {
+        if (history.current) {
+            const canUndo = history.current.canUndo();
+            const canRedo = history.current.canRedo();
+            setCanUndoState(canUndo);
+            setCanRedoState(canRedo);
+            onHistoryChange?.(canUndo, canRedo);
+        } else {
+            setCanUndoState(false);
+            setCanRedoState(false);
+            onHistoryChange?.(false, false);
+        }
+    }, [onHistoryChange]);
+
+    useEffect(() => {
+        if (!history.current) {
+            history.current = new History(nodes);
+            notifyHistoryChange();
+        }
+    }, [nodes, notifyHistoryChange]);
 
     const [selectedNodeIds, setSelectedNodeIds] = useState<Set<number>>(new Set());
     const [isMarqueeSelecting, setIsMarqueeSelecting] = useState(false);
@@ -63,6 +96,34 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
     const [nodesWithinMarquee, setNodesWithinMarquee] = useState<Set<number>>(new Set());
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [pendingDeleteIds, setPendingDeleteIds] = useState<number[]>([]);
+    const [lastAction, setLastAction] = useState<{ type: 'undo' | 'redo', description: string } | null>(null);
+    const lastActionTimeoutRef = useRef<number | null>(null);
+
+    const handleHistoryUpdate = useCallback((newState: INodeInfo[], description: string) => {
+        if (!history.current) {
+            history.current = new History(newState);
+        } else {
+            history.current.push(newState, description);
+        }
+        notifyHistoryChange();
+    }, [notifyHistoryChange]);
+
+    useEffect(() => {
+        if (lastAction) {
+            if (lastActionTimeoutRef.current) {
+                window.clearTimeout(lastActionTimeoutRef.current);
+            }
+            lastActionTimeoutRef.current = window.setTimeout(() => {
+                setLastAction(null);
+                lastActionTimeoutRef.current = null;
+            }, 2000);
+        }
+        return () => {
+            if (lastActionTimeoutRef.current) {
+                window.clearTimeout(lastActionTimeoutRef.current);
+            }
+        };
+    }, [lastAction]);
 
     const clampOffset = useCallback((width: number, height: number, zoom: number, offsetX: number, offsetY: number) => {
         const worldWidth = width * BOUND_SCALE;
@@ -163,7 +224,24 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
         return Array.from(values).sort((a, b) => a.localeCompare(b));
     }, [nodes]);
 
+    const [dragStartNodes, setDragStartNodes] = useState<INodeInfo[] | null>(null);
+
+    const handleNodeDragStart = (id: number) => {
+        setDragStartNodes(nodes.map(node => ({ ...node })));
+    };
+
+    const handleNodeDragEnd = () => {
+        if (dragStartNodes) {
+            handleHistoryUpdate(nodes, 'Move nodes');
+            setDragStartNodes(null);
+        }
+    };
+
     const handleNodeDrag = (id: number, x: number, y: number) => {
+        if (!dragStartNodes) {
+            handleNodeDragStart(id);
+        }
+
         let newX = x;
         let newY = y;
 
@@ -249,17 +327,21 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
             }
         }
 
-        setNodes((prevNodes) =>
-            prevNodes.map((node) => 
-                nodesToMove.has(node.id) 
-                    ? { 
-                        ...node, 
-                        x: Math.min(maxX, Math.max(minX, node.x + adjustedDeltaX)),
-                        y: Math.min(maxY, Math.max(minY, node.y + adjustedDeltaY))
-                    } 
-                    : node
-            )
+        const updatedNodes = nodes.map((node) =>
+            nodesToMove.has(node.id)
+                ? {
+                    ...node,
+                    x: Math.min(maxX, Math.max(minX, node.x + adjustedDeltaX)),
+                    y: Math.min(maxY, Math.max(minY, node.y + adjustedDeltaY))
+                }
+                : node
         );
+        setNodes(updatedNodes);
+
+        if (e.type === 'mouseup' && dragStartNodes) {
+            handleHistoryUpdate(updatedNodes, 'Move nodes');
+            setDragStartNodes(null);
+        }
     };
 
     const screenToWorld = useCallback((screenX: number, screenY: number) => {
@@ -390,6 +472,18 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
     }, [isPanning, isMarqueeSelecting, marqueeRect, nodes, selectedNodeIds]);
 
     useEffect(() => {
+        const handleGlobalMouseUp = () => {
+            if (dragStartNodes && JSON.stringify(dragStartNodes) !== JSON.stringify(nodes)) {
+                handleHistoryUpdate(nodes, `Move node${selectedNodeIds.size > 1 ? 's' : ''} ${Array.from(selectedNodeIds).join(', ')}`);
+            }
+            setDragStartNodes(null);
+        };
+
+        window.addEventListener("mouseup", handleGlobalMouseUp);
+        return () => window.removeEventListener("mouseup", handleGlobalMouseUp);
+    }, [dragStartNodes, nodes, selectedNodeIds, handleHistoryUpdate]);
+
+    useEffect(() => {
         if (isPanning || isMarqueeSelecting) {
             window.addEventListener("mousemove", handleMouseMove);
             window.addEventListener("mouseup", handleMouseUp);
@@ -479,28 +573,26 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
     function handleNewNode(nodeType: string): void {
         const worldCenterX = (workspaceInfo.width / 2 - workspaceInfo.offsetX) / workspaceInfo.zoom;
         const worldCenterY = (workspaceInfo.height / 2 - workspaceInfo.offsetY) / workspaceInfo.zoom;
-        setNodes(prevNodes => {
-            const nextId = prevNodes.reduce((max, node) => Math.max(max, node.id), 0) + 1;
-            const updatedNodes = [...prevNodes, { id: nextId, type: nodeType, x: worldCenterX, y: worldCenterY, fields: {} as Record<string, unknown> }];
-            const { errors } = computeValidation(updatedNodes);
-            setNodeValidationErrors(errors);
-            return updatedNodes;
-        });
+        const nextId = nodes.reduce((max, node) => Math.max(max, node.id), 0) + 1;
+        const updatedNodes = [...nodes, { id: nextId, type: nodeType, x: worldCenterX, y: worldCenterY, fields: {} as Record<string, unknown> }];
+        const { errors } = computeValidation(updatedNodes);
+        setNodeValidationErrors(errors);
+        setNodes(updatedNodes);
+        handleHistoryUpdate(updatedNodes, `Add ${nodeType} node`);
     }
 
     function handleSetFields(fields: Record<string, unknown>): void {
         const selectedId = selectedNode?.id;
         if (selectedId === undefined) return;
-        setNodes(prevNodes => {
-            const updatedNodes = prevNodes.map(node =>
-                node.id === selectedId ? { ...node, fields } : node
-            );
-            const { errors } = computeValidation(updatedNodes);
-            setNodeValidationErrors(errors);
-            const updatedSelected = updatedNodes.find(node => node.id === selectedId) || null;
-            setSelectedNode(updatedSelected);
-            return updatedNodes;
-        });
+        const updatedNodes = nodes.map(node =>
+            node.id === selectedId ? { ...node, fields } : node
+        );
+        const { errors } = computeValidation(updatedNodes);
+        setNodeValidationErrors(errors);
+        const updatedSelected = updatedNodes.find(node => node.id === selectedId) || null;
+        setSelectedNode(updatedSelected);
+        setNodes(updatedNodes);
+        handleHistoryUpdate(updatedNodes, `Edit node ${selectedId} fields`);
     }
 
     const serialize = useCallback(() => {
@@ -550,7 +642,70 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
         setNodeValidationErrors(errors);
         setSelectedNode(null);
         setSelectedNodeIds(new Set());
+
+        history.current = new History(sanitized);
     }, [computeValidation]);
+
+    const undo = useCallback(() => {
+        if (!history.current || !history.current.canUndo()) return;
+        const prevState = history.current.undo();
+        if (prevState) {
+            const newNodes = prevState.map(node => ({ ...node, fields: JSON.parse(JSON.stringify(node.fields)) }));
+            setNodes(newNodes);
+            const { errors } = computeValidation(newNodes);
+            setNodeValidationErrors(errors);
+            setSelectedNode(null);
+            setSelectedNodeIds(new Set());
+            setNodeInfoDrawerOpen(false);
+            notifyHistoryChange();
+            setLastAction({
+                type: 'undo',
+                description: history.current.getDescription()
+            });
+        }
+    }, [computeValidation, notifyHistoryChange]);
+
+    const redo = useCallback(() => {
+        if (!history.current || !history.current.canRedo()) return;
+        const nextState = history.current.redo(0);
+        if (nextState) {
+            const newNodes = nextState.map(node => ({ ...node, fields: JSON.parse(JSON.stringify(node.fields)) }));
+            setNodes(newNodes);
+            const { errors } = computeValidation(newNodes);
+            setNodeValidationErrors(errors);
+            setSelectedNode(null);
+            setSelectedNodeIds(new Set());
+            setNodeInfoDrawerOpen(false);
+            notifyHistoryChange();
+            setLastAction({
+                type: 'redo',
+                description: history.current.getDescription()
+            });
+        }
+    }, [computeValidation, notifyHistoryChange]);
+
+    const canUndo = useCallback(() => canUndoState, [canUndoState]);
+    const canRedo = useCallback(() => canRedoState, [canRedoState]);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                if (e.shiftKey) {
+                    e.preventDefault();
+                    redo();
+                } else {
+                    e.preventDefault();
+                    undo();
+                }
+            } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+                e.preventDefault();
+                redo();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [undo, redo]);
 
     useImperativeHandle(ref, () => ({
         serialize,
@@ -558,18 +713,20 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
         openNodePalette,
         zoomIn,
         zoomOut,
-        resetView
-    }), [serialize, deserialize, openNodePalette, zoomIn, zoomOut, resetView]);
+        resetView,
+        undo,
+        redo,
+        canUndo,
+        canRedo
+    }), [serialize, deserialize, openNodePalette, zoomIn, zoomOut, resetView, undo, redo, canUndo, canRedo]);
 
     const deleteNodes = useCallback((ids: number[]) => {
         if (ids.length === 0) return;
         const idSet = new Set(ids);
-        setNodes(prevNodes => {
-            const remaining = prevNodes.filter(node => !idSet.has(node.id));
-            const { errors } = computeValidation(remaining);
-            setNodeValidationErrors(errors);
-            return remaining;
-        });
+        const remaining = nodes.filter(node => !idSet.has(node.id));
+        const { errors } = computeValidation(remaining);
+        setNodeValidationErrors(errors);
+        setNodes(remaining);
         setSelectedNode(prev => (prev && idSet.has(prev.id) ? null : prev));
         setSelectedNodeIds(prev => {
             const next = new Set(prev);
@@ -578,7 +735,8 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
         });
         setNodesWithinMarquee(new Set());
         setNodeInfoDrawerOpen(false);
-    }, [computeValidation]);
+        handleHistoryUpdate(remaining, `Delete node${ids.length > 1 ? 's' : ''} ${ids.join(', ')}`);
+    }, [computeValidation, handleHistoryUpdate, nodes]);
 
     function handleDeleteNode(id: number): void {
         deleteNodes([id]);
@@ -681,7 +839,7 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
 
     return (
         <>
-            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields} deleteNode={handleDeleteNode} existingNetworks={existingNetworks}/>
+            <NodeSettingsDrawer open={nodeInfoDrawerOpen} setOpen={setNodeInfoDrawerOpen} selectedNode={selectedNode} setFields={handleSetFields} deleteNode={handleDeleteNode} existingNetworks={existingNetworks} />
             <NodeSelector open={nodeSelectorOpen} setOpen={setNodeSelectorOpen} onSelected={handleNewNode} />
             <div
                 ref={self}
@@ -712,6 +870,8 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
                             key={i.id}
                             workspaceInfo={workspaceInfo}
                             onNodeDrag={handleNodeDrag}
+                            onNodeDragStart={handleNodeDragStart}
+                            onNodeDragEnd={handleNodeDragEnd}
                             onNodeClicked={handleNodeClicked}
                             hasError={nodeValidationErrors[i.id] !== undefined}
                             isSelected={selectedNodeIds.has(i.id)}
@@ -732,6 +892,34 @@ const NodeEditor = forwardRef<NodeEditorHandle>((_props, ref) => {
                         />
                     )}
                 </div>
+                {lastAction && (
+                    <div className="pointer-events-none absolute bottom-20 left-1/2 z-20 -translate-x-1/2">
+                        <div className="pointer-events-auto flex items-center gap-3 rounded-full border bg-background/90 px-4 py-2 shadow-lg backdrop-blur">
+                            <span className="text-sm font-medium text-foreground">
+                                {lastAction.type === 'undo' ? 'Undone to' : 'Redone to'} {lastAction.description}
+                            </span>
+                            {lastAction.type === 'undo' ? (
+                                <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={redo}
+                                    disabled={!canRedoState}
+                                >
+                                    <Redo2 className="h-4 w-4" />
+                                </Button>
+                            ) : (
+                                <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={undo}
+                                    disabled={!canUndoState}
+                                >
+                                    <Undo2 className="h-4 w-4" />
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+                )}
                 {selectedCount > 0 && (
                     <div className="pointer-events-none absolute bottom-6 left-1/2 z-20 -translate-x-1/2">
                         <div className="pointer-events-auto flex items-center gap-3 rounded-full border bg-background/90 px-4 py-2 shadow-lg backdrop-blur">

@@ -120,7 +120,7 @@ export function parseDockerCompose(yamlText: string): INodeInfo[] {
       if (env?.MONGO_INITDB_ROOT_USERNAME) fields.username = env.MONGO_INITDB_ROOT_USERNAME;
       if (env?.MONGO_INITDB_ROOT_PASSWORD) fields.password = env.MONGO_INITDB_ROOT_PASSWORD;
     } else if (nodeType === 'node') {
-        //
+      //
     } else if (nodeType === 'docker') {
       if (typeof svc.image === 'string') fields.image = svc.image;
       if (env) fields.environment = env;

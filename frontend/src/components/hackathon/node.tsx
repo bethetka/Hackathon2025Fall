@@ -24,6 +24,8 @@ export interface INodeProps {
     info: INodeInfo;
     workspaceInfo: IWorkspaceInfo;
     onNodeDrag: (id: number, x: number, y: number) => void;
+    onNodeDragStart: (id: number) => void;
+    onNodeDragEnd: () => void;
     onNodeClicked: (id: number, e?: React.MouseEvent) => void;
     interactable: boolean;
     hasError?: boolean;
@@ -36,7 +38,19 @@ export const NODE_WIDTH = 320;
 export const NODE_HEIGHT = 160;
 export const COLLISION_PADDING = 8;
 
-export const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag, onNodeClicked, interactable, hasError, isSelected = false, isWithinMarquee = false, isMarqueeSelecting = false }) => {
+export const Node: React.FC<INodeProps> = ({
+    info,
+    workspaceInfo,
+    onNodeDrag,
+    onNodeDragStart,
+    onNodeDragEnd,
+    onNodeClicked,
+    interactable,
+    hasError,
+    isSelected = false,
+    isWithinMarquee = false,
+    isMarqueeSelecting = false
+}) => {
     const [isDragging, setIsDragging] = useState(false);
     const [initialMousePos, setInitialMousePos] = useState({ x: 0, y: 0 });
     const [initialNodePos, setInitialNodePos] = useState({ x: 0, y: 0 });
@@ -48,6 +62,7 @@ export const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag, on
         setInitialMousePos({ x: e.clientX, y: e.clientY });
         setInitialNodePos({ x: info.x, y: info.y });
         hasMovedRef.current = false;
+        onNodeDragStart?.(info.id);
     };
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -67,8 +82,11 @@ export const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag, on
     }, [isDragging, interactable, initialMousePos, initialNodePos, info.id, onNodeDrag, workspaceInfo.zoom]);
 
     const handleMouseUp = useCallback(() => {
-        setIsDragging(false);
-    }, []);
+        if (isDragging) {
+            setIsDragging(false);
+            onNodeDragEnd();
+        }
+    }, [isDragging, onNodeDragEnd]);
 
     useEffect(() => {
         if (isDragging && interactable) {
@@ -98,10 +116,10 @@ export const Node: React.FC<INodeProps> = ({ info, workspaceInfo, onNodeDrag, on
         >
             <div
                 className={`relative flex h-full w-full flex-col rounded-[12px] border-2 border-solid bg-white font-medium transition-shadow ${hasError
-                        ? "border-red-500"
-                        : isWithinMarquee
-                            ? "border-blue-500"
-                            : `border-transparent ${!isMarqueeSelecting ? "hover:border-black" : ""}`
+                    ? "border-red-500"
+                    : isWithinMarquee
+                        ? "border-blue-500"
+                        : `border-transparent ${!isMarqueeSelecting ? "hover:border-black" : ""}`
                     } ${isSelected ? "ring-2 ring-blue-500 ring-offset-white" : ""}`}
                 onMouseDown={interactable ? handleMouseDown : undefined}
                 onClick={(e) => {
