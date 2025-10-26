@@ -2,12 +2,11 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json yarn.lock ./
-COPY .yarnrc.yml ./
+COPY . .
+RUN yarn set version latest
 
 RUN --mount=type=cache,target=/root/.yarn YARN_CACHE_FOLDER=/root/.yarn yarn install --immutable
 
-COPY . .
 RUN yarn build
 
 FROM node:20-alpine AS production
