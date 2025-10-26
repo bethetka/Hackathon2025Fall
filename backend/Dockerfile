@@ -18,7 +18,6 @@ RUN corepack enable
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/.pnp.cjs ./
 COPY --from=builder /app/.yarnrc.yml ./
 
 ENV NODE_ENV=production
