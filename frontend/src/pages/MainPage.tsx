@@ -1,5 +1,6 @@
 import NodeEditor, { type NodeEditorHandle } from "@/components/hackathon/node-editor";
 import React, { type ChangeEvent, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,6 +9,7 @@ import { Check, Container, Copy, Download, FileJson, Keyboard, Plus, RefreshCw, 
 import { cn } from "@/lib/utils";
 import { buildDockerComposeYaml } from "@/lib/generator";
 import { parseDockerCompose } from "@/lib/composeParser";
+import { useAuth } from "@/providers/AuthProvider";
 
 export const MainPage: React.FC = () => {
     const nodeEditorRef = useRef<NodeEditorHandle>(null);
@@ -207,6 +209,9 @@ export const MainPage: React.FC = () => {
         }
     };
 
+    const { user, isLoading: isAuthLoading } = useAuth();
+    const userInitial = user?.username?.charAt(0).toUpperCase() ?? "";
+
     return (
         <div className="relative flex h-screen w-full overflow-hidden bg-background text-foreground">
             <div className="h-full w-full">
@@ -334,6 +339,28 @@ export const MainPage: React.FC = () => {
                             </div>
                         </div>
                     </div>
+                </div>
+                <div className="pointer-events-auto absolute right-6 top-6 flex items-center gap-3 rounded-2xl border bg-background/90 px-4 py-2 shadow-lg backdrop-blur">
+                    {isAuthLoading ? (
+                        <div className="h-9 w-9 animate-pulse rounded-full bg-muted/40" />
+                    ) : user ? (
+                        <Link
+                            to="/profile"
+                            className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold uppercase text-primary transition hover:bg-primary/25"
+                            aria-label="Open profile"
+                        >
+                            {userInitial}
+                        </Link>
+                    ) : (
+                        <>
+                            <p className="hidden text-xs text-muted-foreground sm:block">
+                                All your changes will be lost if you are not logged in.
+                            </p>
+                            <Button variant="outline" size="sm" asChild>
+                                <Link to="/login">Sign in</Link>
+                            </Button>
+                        </>
+                    )}
                 </div>
             </div>
 
