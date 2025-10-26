@@ -270,3 +270,4 @@ $RECYCLE.BIN/
 # .pnp.*
 
 # End of https://www.toptal.com/developers/gitignore/api/yarn,node,visualstudiocode,windows,linux,macos,git
+backend/.env.docker
